@@ -1,0 +1,27 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap');
+*{box-sizing:border-box}
+html,body{margin:0;background:#020305;color:#f1f5f6;font-family:'DM Sans',sans-serif;overflow:hidden}
+#surface{position:fixed;inset:0}
+header{position:absolute;top:0;left:0;right:0;padding:39px 5vw;display:flex;align-items:center;justify-content:space-between;pointer-events:none;z-index:3}
+a{color:inherit;text-decoration:none;pointer-events:auto}
+header .brand{font-size:14px;letter-spacing:.27em;font-weight:600}
+header .brand span{color:#9abace}
+header nav{display:flex;gap:34px;font-size:13px;font-weight:300}
+header a:hover,button:hover{opacity:.7}
+.tools{position:absolute;top:122px;left:5vw;width:310px;display:flex;flex-direction:column;align-items:flex-start;gap:15px;pointer-events:none;z-index:3}
+.eyebrow{font-size:11px;letter-spacing:.23em;color:#9bb7c8}
+.tools h1{font-size:31px;font-weight:300;letter-spacing:-.04em;margin:0 0 6px}
+.field,.slider-group{display:flex;flex-direction:column;gap:6px;font-size:10px;letter-spacing:.17em;color:#9eb8c7;pointer-events:auto;width:100%}
+.field select,.field input{width:100%;padding:8px 0 10px;color:#eff7fb;background:transparent;border:0;border-bottom:1px solid #ffffff2f;font:300 14px 'DM Sans';color-scheme:dark}
+.button-row{display:flex;flex-wrap:wrap;gap:10px 18px;pointer-events:auto}
+.tools button{color:#c4d1d8;border:0;background:none;font:300 15px 'DM Sans';cursor:pointer;padding:0 0 4px;pointer-events:auto}
+.tools button.selected{border-bottom:1px solid #e0edf2;color:white}
+.sky-block{margin-top:10px;display:flex;flex-direction:column;gap:12px;width:100%}
+.slider-group input[type=range]{width:100%;accent-color:#b7d4e3}
+.slider-group span{font-size:12px;letter-spacing:0;color:#f6f9fb}
+.hint{max-width:310px;color:#94a8b3;font-size:11px;line-height:1.55;margin-top:4px}
+.readout{position:absolute;right:5vw;top:165px;text-align:right;max-width:315px;pointer-events:none;font-weight:300;z-index:3}
+.readout #location{font-size:24px}
+.readout #height,.readout #analysis{font-size:12px;color:#a2b7c3;margin-top:8px;line-height:1.5}
+footer{position:absolute;bottom:29px;left:5vw;right:5vw;display:flex;justify-content:space-between;gap:20px;font-size:10px;letter-spacing:.14em;color:#a5bccb;pointer-events:none;z-index:3}
+@media(max-width:900px){header{padding:24px}header nav{gap:16px}.tools{left:22px;top:100px;width:240px}.tools h1{font-size:23px}.tools button{font-size:13px}.readout{right:22px;top:auto;bottom:95px;max-width:210px}.readout #location{font-size:16px}footer{left:22px;right:22px}footer span:nth-child(2){display:none}}

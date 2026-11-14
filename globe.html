@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang='en'>
+<head>
+  <meta charset='utf-8'>
+  <meta name='viewport' content='width=device-width,initial-scale=1'>
+  <meta name='theme-color' content='#06060c'>
+  <title>TerraBits — Explore</title>
+  <link rel='stylesheet' href='globe.css'>
+  <script type='importmap'>{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"}}</script>
+  <style>html{opacity:0;transition:opacity .32s ease}html.page-visible{opacity:1}html.page-leaving{opacity:0}@media(prefers-reduced-motion:reduce){html{opacity:1;transition:none}}</style>
+</head>
+<body>
+<div id='canvas-shell'></div><div class='soft-shade'></div>
+<header class='top'><a href='./' class='brand'>TERRABITS<span>✦</span></a><nav><a href='./'>Home</a><a href='explore.html'>Atlas</a><a href='globe.html' class='current'>Explore</a><a href='./#contacts'>Contacts</a></nav></header>
+<main>
+  <aside class='tools' aria-label='Map tools'>
+    <h1>EXPLORE</h1>
+    <div class='menu'>
+      <button id='imagery' class='active'>Lunar imagery</button>
+      <button id='relief' aria-pressed='true' class='active'>LOLA relief · 6×</button>
+      <button id='grid' aria-pressed='false'>120 km grid</button>
+      <button id='markers' aria-pressed='true' class='active'>Landmarks & missions</button>
+      <button id='reset'>Reset view</button>
+      <button id='paths' aria-pressed='true' class='active'>Celestial paths</button>
+      <a href='terrain.html?site=dm2' id='terrainLink'>Terrain · DM2 ↗</a>
+      <a href='explore.html' id='atlasLink'>Open data atlas ↗</a>
+    </div>
+    <div class='celestial-controls'>
+      <label for='skyDate'>CELESTIAL TIME</label>
+      <input type='date' id='skyDate' value='2026-11-14' aria-label='Celestial model date'>
+      <button id='skyPlay' aria-pressed='false'>Play motion ↗</button>
+      <span id='skyStatus'>Apparent sky context for Sun and Earth. Star labels are approximate fixed-sky references.</span>
+    </div>
+    <div class='small-copy' id='textureState'>Loading global LOLA elevation…</div>
+  </aside>
+  <aside class='detail' id='details'>
+    <div class='detail-heading'>SELECTED LOCATION</div>
+    <div class='site' id='siteName'>Explore the globe</div>
+    <div class='coords' id='coordinates'>Click a point on the Moon</div>
+    <div class='grid-region' id='gridRegion' hidden><span id='regionId'></span><span id='regionSize'></span></div>
+    <div class='detail-actions'><button id='copyCoordinates'>Copy coordinates ↗</button><a href='terrain.html?site=dm2' id='inspectLink'>Open terrain ↗</a></div>
+    <div class='legend'>
+      <div><span class='dot feature'></span> Features</div>
+      <div><span class='dot mission'></span> Missions</div>
+      <div><span class='dot site'></span> Local DEM sites</div>
+      <div><span class='dot star'></span> Labeled stars</div>
+    </div>
+    <div class='data-label' id='dataLabel'>Global LOLA elevation and the Moon imagery are active. Landmarks and missions are selectively marked to keep the view readable.</div>
+  </aside>
+</main>
+<div class='bottom'><div class='status'><span class='pulse'></span><span id='modeLabel'>3D GLOBE</span></div><span class='help'>DRAG · ZOOM · SELECT REGION</span><button id='fullScreen'>Fullscreen ⤢</button></div>
+<div id='unsupported' hidden><div>WebGL isn't available in this browser. <a href='explore.html'>Open the 2D atlas ↗</a></div></div>
+<script type='module' src='globe.js'></script><script type='module' src='page-motion.js'></script>
+</body>
+</html>
