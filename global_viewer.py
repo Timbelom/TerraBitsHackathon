@@ -14,21 +14,21 @@ from rasterio.enums import Resampling
 from rasterio.warp import transform
 
 # ==============================================================================
-# 1. CONFIGURATION & MISSION PARAMETERS (MAX DETAIL)
+# 1. CONFIGURATION & MISSION PARAMETERS (TIERED RESOLUTION)
 # ==============================================================================
 GLOBAL_TIF_CANDIDATES = [
     "LDEM64_PA_pixel_202405 copy.tif",
     "LDEM64_PA_pixel_202405.tif",
 ]
-OUTPUT_HTML = "lunar_global_200km_max_detail_3d.html"
+OUTPUT_HTML = "lunar_global_tiered_3d.html"
 
 MOON_RADIUS_M = 1737400.0       # IAU Mean Lunar Radius in meters
 vertical_exaggeration = 1.0     # 1.0 = true 1:1 physical proportions
-TARGET_LAT_ROWS = 2160          # Max global DEM grid: 2160 x 4320
+TARGET_LAT_ROWS = 720           # LIGHTWEIGHT GLOBAL MODEL (720x1440 for fast global rendering)
 TILES_PER_CUBE_EDGE = 20        # 6 * 20 * 20 = 2,400 overlapping 200x200 km tiles
 TILE_SIZE_KM = 200.0            # Visible square extent: 200 km x 200 km
 SHADOW_PAD_KM = 25.0            # +25 km on each side (250x250 km total shadow caster, clipped to 200x200 km)
-TILE_GRID_RES = 512             # MAX VERTEX DENSITY: 512 x 512 vertices per tile (262k triangles)
+TILE_GRID_RES = 512             # MAX-DETAIL HIGH-RES MODEL (Loaded ONLY upon clicking a 200x200 km tile)
 
 lunar_geo_crs = "+proj=longlat +R=1737400 +no_defs"
 
@@ -90,7 +90,7 @@ def fetch_jpl_horizons_ephemeris(
         + urllib.parse.urlencode(params)
     )
     req = urllib.request.Request(
-        url, headers={"User-Agent": "LunarGlobalMaxDetail-JPL/3.0"}
+        url, headers={"User-Agent": "LunarGlobalTiered-JPL/3.0"}
     )
 
     with urllib.request.urlopen(req, timeout=60) as resp:
@@ -265,8 +265,8 @@ def compute_global_exposure_maps(
     lat_min, lat_max = float(np.min(lats_1d)), float(np.max(lats_1d))
     lon_min, lon_max = float(np.min(lons_1d)), float(np.max(lons_1d))
 
-    comp_h = min(rows, 320)
-    comp_w = min(cols, 640)
+    comp_h = min(rows, 240)
+    comp_w = min(cols, 480)
     c_lats = np.linspace(lat_max, lat_min, comp_h, dtype=np.float64)
     if is_full_globe:
         c_lons = -180.0 + (np.arange(comp_w, dtype=np.float64) / comp_w) * 360.0
@@ -300,11 +300,11 @@ def compute_global_exposure_maps(
     dip_rad = -np.arccos(np.clip(MOON_RADIUS_M / np.maximum(MOON_RADIUS_M, r0), 0.0, 1.0))
     base_horizon_deg = np.degrees(dip_rad).astype(np.float32)
 
-    num_sectors = 72
+    num_sectors = 36
     sector_deg = 360.0 / num_sectors
     horizon_deg = np.broadcast_to(base_horizon_deg[None, :, :], (num_sectors, comp_h, comp_w)).copy()
 
-    psi_steps_rad = np.radians(np.linspace(0.35, 9.0, 26))
+    psi_steps_rad = np.radians(np.linspace(0.5, 9.0, 18))
     cos_psis = np.cos(psi_steps_rad)
     sin_psis = np.sin(psi_steps_rad)
 
@@ -336,8 +336,8 @@ def compute_global_exposure_maps(
             elev_deg = np.degrees(np.arctan2(rk * cp - r0, rk * sp)).astype(np.float32)
             np.maximum(max_el_s, elev_deg, out=max_el_s)
 
-    sun_sub = sun_dirs_moon[::2].T
-    earth_sub = earth_dirs_moon[::2].T
+    sun_sub = sun_dirs_moon[::4].T
+    earth_sub = earth_dirs_moon[::4].T
 
     sun_exp_comp = np.zeros((comp_h, comp_w), dtype=np.float32)
     radio_exp_comp = np.zeros((comp_h, comp_w), dtype=np.float32)
@@ -395,14 +395,14 @@ load_exposure_maps = ask_yes_no(
 
 global_tif_path = next((p for p in GLOBAL_TIF_CANDIDATES if Path(p).exists()), GLOBAL_TIF_CANDIDATES[0])
 total_steps_log = 3 if load_exposure_maps else 2
-print(f"[1/{total_steps_log}] Loading Global Lunar GeoTIFF (Max Detail {TARGET_LAT_ROWS}x{TARGET_LAT_ROWS*2}): {global_tif_path} ...")
+print(f"[1/{total_steps_log}] Loading Global Lunar GeoTIFF (Tiered Global Low-Res {TARGET_LAT_ROWS}x{TARGET_LAT_ROWS*2}): {global_tif_path} ...")
 
 with rasterio.open(global_tif_path) as dataset:
     raw_h, raw_w = dataset.height, dataset.width
     aspect = raw_w / max(1, raw_h)
     target_rows = TARGET_LAT_ROWS
     target_cols = max(
-        TARGET_LAT_ROWS, min(4320, int(round(TARGET_LAT_ROWS * aspect)))
+        TARGET_LAT_ROWS, min(1440, int(round(TARGET_LAT_ROWS * aspect)))
     )
 
     g_z_grid = dataset.read(
@@ -488,7 +488,7 @@ lon_min, lon_max = float(np.min(lons_norm)), float(np.max(lons_norm))
 is_full_globe = (lon_max - lon_min) >= 355.0 and (lat_max - lat_min) >= 175.0
 
 print(
-    f"Global Max-Detail Grid: {g_z_grid.shape[0]}x{g_z_grid.shape[1]} | "
+    f"Global Low-Res Grid: {g_z_grid.shape[0]}x{g_z_grid.shape[1]} | "
     f"Elevation: {g_min_z:.1f} m to {g_max_z:.1f} m"
 )
 
@@ -550,7 +550,7 @@ earth_dirs_xyz = moon_fixed_to_threejs_list(earth_dirs_moon)
 
 
 # ==============================================================================
-# 6. PACKAGE PAYLOAD & GENERATE MAX-DETAIL HTML VIEWER
+# 6. PACKAGE PAYLOAD & GENERATE TIERED-DETAIL HTML VIEWER
 # ==============================================================================
 total_tiles_count = 6 * TILES_PER_CUBE_EDGE * TILES_PER_CUBE_EDGE
 
@@ -589,7 +589,7 @@ html_template = f"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Lunar Global + 200×200 km Max-Detail Tiles 3D (LOLA + JPL)</title>
+<title>Lunar Global Tiered 3D (Fast Low-Res Globe + Max-Detail {TILE_GRID_RES}px Tiles)</title>
 <style>
   * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }}
   body {{ background: #07090e; color: #e6edf3; overflow: hidden; }}
@@ -846,15 +846,15 @@ html_template = f"""<!DOCTYPE html>
 </head>
 <body>
 <div id="canvas-container"></div>
-<div id="transition-veil"><div id="transition-label">Zooming to Max-Detail 200×200 km Tile...</div></div>
+<div id="transition-veil"><div id="transition-label">Lade Max-Detail 200×200 km Kachel ({TILE_GRID_RES}px)...</div></div>
 
 <div id="hud">
   <button class="nav-action-btn back-global" id="back-to-global-btn" style="display: none;">
     ← Zurück zur Mondansicht
   </button>
 
-  <h1 id="hud-title">Global LOLA + JPL Horizons 3D</h1>
-  <div class="subtitle" id="hud-subtitle">1:1 Metric Lunar Sphere • {total_tiles_count:,} × (200×200 km, 512px Grid)</div>
+  <h1 id="hud-title">Global Lunar Globe (Fast)</h1>
+  <div class="subtitle" id="hud-subtitle">1:1 Metric Lunar Sphere • {total_tiles_count:,} × (200×200 km, {TILE_GRID_RES}px Max-Detail)</div>
 
   <div class="map-mode-grid" id="map-mode-selector">
     <div class="mode-btn active shadow-mode" data-mode="shadow">☀️ JPL Sun Shadows</div>
@@ -935,10 +935,10 @@ html_template = f"""<!DOCTYPE html>
     </div>
 
     <button class="nav-action-btn enter-detail" id="enter-tile-btn">
-      🔍 Max-Detail (512px) Quadrat in 3D öffnen
+      🔍 Max-Detail ({TILE_GRID_RES}px) Quadrat in 3D öffnen
     </button>
     <div class="site-hint" id="site-hint">
-      Klicke auf ein beliebiges <b>200×200 km Quadrat</b>, um das hochauflösende 512px-Terrain mit JPL-Schattenwurf zu öffnen.
+      Klicke auf ein beliebiges <b>200×200 km Quadrat</b>, um das hochauflösende {TILE_GRID_RES}px-Terrain mit JPL-Schattenwurf zu öffnen.
     </div>
   </div>
 </div>
@@ -1282,7 +1282,7 @@ const LUNAR_TILES = (() => {{
 
 
 // ==============================================================================
-// VIEW 1: GLOBAL 3D LUNAR SPHERE + 2,400 SQUARES
+// VIEW 1: GLOBAL LOW-RES 3D LUNAR SPHERE + 2,400 SQUARES
 // ==============================================================================
 const GlobalView = (() => {{
   const group = new THREE.Group();
@@ -2215,14 +2215,14 @@ const GlobalView = (() => {{
 
 
 // ==============================================================================
-// VIEW 2: MAX-DETAIL 512px TILE VIEW (+25 KM SHADOW BUFFER)
+// VIEW 2: MAX-DETAIL {TILE_GRID_RES}px TILE VIEW (+25 KM SHADOW BUFFER)
 // ==============================================================================
 const TileDetailView = (() => {{
   const group = new THREE.Group();
   group.visible = false;
   scene.add(group);
 
-  const RES = DATA.tile_grid_res;                  // 512 (Max Detail)
+  const RES = DATA.tile_grid_res;                  // {TILE_GRID_RES} (Max Detail)
   const VIS_SIZE_KM = DATA.tile_size_km;          // 200 km visible square
   const VIS_HALF_KM = VIS_SIZE_KM * 0.5;          // 100 km visible half-width
   const PAD_KM = DATA.shadow_pad_km;              // 25 km shadow margin per side
@@ -3273,8 +3273,8 @@ function syncHUDForScope() {{
     enterTileBtn.style.display = 'flex';
     tileGridToggleRow.style.display = 'flex';
     graticuleToggleRow.style.display = 'flex';
-    hudTitleEl.textContent = 'Global LOLA + JPL Horizons 3D';
-    hudSubtitleEl.textContent = `1:1 Metric Lunar Sphere • ${{LUNAR_TILES.length.toLocaleString()}} × (200×200 km, 512px)`;
+    hudTitleEl.textContent = 'Global Lunar Globe (Fast)';
+    hudSubtitleEl.textContent = `1:1 Metric Lunar Sphere • ${{LUNAR_TILES.length.toLocaleString()}} × (200×200 km, {TILE_GRID_RES}px Max-Detail)`;
 
     const showC = GlobalView.getShowContours();
     contourSwitchPill.classList.toggle('on', showC);
@@ -3299,7 +3299,7 @@ function syncHUDForScope() {{
     `;
     statMidLblEl.innerHTML = 'Annual<br/>Radio (DTE)';
     statMidValEl.style.color = '#00f5d4';
-    siteHintEl.innerHTML = 'Klicke auf ein beliebiges Quadrat, um das hochauflösende 512px-Terrain in 3D zu öffnen.';
+    siteHintEl.innerHTML = 'Klicke auf ein beliebiges Quadrat, um das hochauflösende {TILE_GRID_RES}px-Terrain in 3D zu öffnen.';
 
     drawPowerStrip(GlobalView.hourlySunLit);
     updateLegend('global', activeMode);
@@ -3313,7 +3313,7 @@ function syncHUDForScope() {{
     const latDir = tile.lat >= 0 ? 'N' : 'S';
     const lonDir = tile.lon >= 0 ? 'E' : 'W';
     hudTitleEl.textContent = `Quadrat ${{tile.idLabel}} — Max-Detail 3D`;
-    hudSubtitleEl.textContent = `Zentrum: ${{Math.abs(tile.lat).toFixed(2)}}° ${{latDir}}, ${{Math.abs(tile.lon).toFixed(2)}}° ${{lonDir}} • 512×512 Grid`;
+    hudSubtitleEl.textContent = `Zentrum: ${{Math.abs(tile.lat).toFixed(2)}}° ${{latDir}}, ${{Math.abs(tile.lon).toFixed(2)}}° ${{lonDir}} • {TILE_GRID_RES}×{TILE_GRID_RES} Grid`;
 
     const showC = TileDetailView.getShowContours();
     contourSwitchPill.classList.toggle('on', showC);
@@ -3335,7 +3335,7 @@ function syncHUDForScope() {{
     `;
     statMidLblEl.innerHTML = 'Annual<br/>Radio (DTE)';
     statMidValEl.style.color = '#00f5d4';
-    siteHintEl.innerHTML = 'Maximal detailgetreues 512px-Mesh mit 250×250 km Schatten-Puffer.';
+    siteHintEl.innerHTML = 'Maximal detailgetreues {TILE_GRID_RES}px-Mesh mit 250×250 km Schatten-Puffer.';
 
     drawPowerStrip(TileDetailView.hourlySunLit);
     updateLegend('tile', activeMode);
@@ -3489,7 +3489,7 @@ function startTransitionToTile(tileIdx) {{
     .addScaledVector(surfNorm, GlobalView.R_MOON_W * 0.22)
     .addScaledVector(tangent, GlobalView.R_MOON_W * 0.12);
 
-  transitionLabel.textContent = `Öffne Max-Detail Quadrat ${{tile.idLabel}} (${{Math.abs(tile.lat).toFixed(1)}}° ${{latDir}}, ${{Math.abs(tile.lon).toFixed(1)}}° ${{lonDir}})...`;
+  transitionLabel.textContent = `Lade Max-Detail Quadrat ${{tile.idLabel}} (${{Math.abs(tile.lat).toFixed(1)}}° ${{latDir}}, ${{Math.abs(tile.lon).toFixed(1)}}° ${{lonDir}})...`;
   controls.enabled = false;
 }}
 
@@ -3876,5 +3876,5 @@ animate(performance.now());
 """
 
 Path(OUTPUT_HTML).write_text(html_template, encoding="utf-8")
-print(f"Max-Detail Global + {total_tiles_count:,} x (200x200 km, 512px) Tiles saved to '{OUTPUT_HTML}'")
+print(f"Tiered Global Globe + {total_tiles_count:,} x (200x200 km, {TILE_GRID_RES}px) Tiles saved to '{OUTPUT_HTML}'")
 webbrowser.open(Path(OUTPUT_HTML).resolve().as_uri())
