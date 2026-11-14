@@ -1,5 +1,7 @@
-// Public Supabase project settings, NOT a NASA API key or service_role key.
+// Public Supabase project settings.
+// Do NOT store secret keys here.
+
 window.LCG_CONFIG = {
-  supabaseUrl: 'https://supabase.com/dashboard/project/fcghobgyttjztlusgqsv',
+  supabaseUrl: 'https://fcghobgyttjztlusgqsv.supabase.co',
   supabaseAnonKey: 'sb_publishable_dYRskU3H7Rjo4IkDcjux_A_rh3iNfRO'
 };
