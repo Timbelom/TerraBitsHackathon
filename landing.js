@@ -2,6 +2,8 @@
 // Colour: NASA SVS CGI Moon Kit (LROC WAC), relief: normal map derived from our LOLA grid.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { createPins } from './landing-pins.js';
+import { createSearch } from './landing-search.js';
 import { inertialSky, SIDEREAL_DAYS, DAY_MS, MOON_RADIUS_KM, EARTH_RADIUS_KM, SUN_RADIUS_KM, AU_KM } from './lunar-sky.js';
 
 const world = document.getElementById('world');
@@ -386,7 +388,7 @@ function onMoon(e) {
 }
 let drag = null, vy = 0, vx = 0;
 hero.addEventListener('pointerdown', e => {
-  if (busy || e.target.closest('a, .params')) return;                // drag anywhere turns the space
+  if (busy || e.target.closest('a, .params, .pin')) return;                // drag anywhere turns the space
   drag = { x: e.clientX, y: e.clientY, moved: 0 };
   hero.setPointerCapture(e.pointerId); hero.classList.add('dragging');
 });
@@ -424,7 +426,7 @@ function applyMix(m) {
 applyMix(0); layout();
 hero.addEventListener('click', e => {
   const moved = lastMoved; lastMoved = 0;
-  if (busy || moved >= 6 || e.target.closest('a, .params')) return;
+  if (busy || moved >= 6 || e.target.closest('a, .params, .pin')) return;
   if (!expanded) expand(); else if (onMoon(e)) enter();
 });
 
@@ -441,6 +443,9 @@ target.addEventListener('click', () => expanded ? enter() : expand());
 target.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); expanded ? enter() : expand(); } });
 document.querySelectorAll('[data-enter]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); enter(); }));
 addEventListener('pageshow', e => { if (e.persisted) { busy = false; flight = null; document.body.classList.remove('entering'); layout(); } });
+
+// Landing-site pins (landing-pins.js): an HTML layer over the canvas, switched by "historical" in the sidebar.
+const pins = createPins({ root: document.getElementById('pins'), hero, moon, pivot, camera, R });
 
 // --- Loop -------------------------------------------------------------------
 let last = performance.now();
@@ -469,6 +474,7 @@ function frame(now) {
     const p = Math.min((now - flight.t0) / flight.ms, 1), e = p * p * (3 - 2 * p);
     camera.position.z = flight.from + (flight.to - flight.from) * e;
   }
+  pins.update(bufW, bufH);
   renderer.render(scene, camera);
 }
 requestAnimationFrame(frame);
@@ -480,6 +486,8 @@ requestAnimationFrame(frame);
     earthOrbit: on => { orbits.children[1].visible = on; },
     stars: on => { sky.visible = on; },
     relief: on => { const k = on ? 1.35 : 0; material.normalScale.set(k, k); },
+    historical: on => pins.show(on),
+    orbits: on => { orbits.visible = on; },              // both paths: the Sun's yearly path and the Earth's orbit
   };
   // Opening the sidebar narrows the 3D view to the remaining width; the render loop follows its width.
   tab.addEventListener('click', () => { const open = box.classList.toggle('open'); document.body.classList.toggle('side-open', open); tab.setAttribute('aria-expanded', open); });
@@ -501,20 +509,25 @@ requestAnimationFrame(frame);
     if (!(Math.abs(lat) <= 90) || !(Math.abs(lon) <= 360)) return null;
     return [lat, ((lon % 360) + 360) % 360];
   }
-  function commitCoord() {
+  function commitCoord(turnTo) {
     const c = readCoord(coord.value), ok = !!c;
+    pins.custom(c, turnTo === true);                        // typed coordinates become the selected site (own pin)
     coord.setAttribute('aria-invalid', !ok);
     help.toggleAttribute('data-error', !ok);
-    help.textContent = ok ? helpText : 'Not a coordinate pair. Use latitude, longitude in degrees, e.g. -89.45, 222.8';
+    help.textContent = ok ? helpText : 'Use lat, lon in degrees, e.g. -89.45, 222.8';
     if (ok) coord.value = c[0].toFixed(4) + ', ' + c[1].toFixed(4);
   }
-  coord.addEventListener('change', commitCoord);
+  pins.onPick = s => { coord.value = s.lat + ', ' + s.lon; commitCoord(); };
+  // Header search: a listed site by name, or coordinates. Both end in the Site field and turn the Moon to the site.
+  createSearch({ input: document.getElementById('search-input'), list: document.getElementById('search-list'), sites: () => pins.sites, parse: readCoord,
+    choose: it => { if (!expanded) expand(); if (it.site) { pins.pick(it.site); pins.face(it.site); } else { coord.value = it.coord.join(', '); commitCoord(true); } } });
+  coord.addEventListener('change', () => commitCoord(true));
   coord.addEventListener('paste', () => setTimeout(commitCoord));
   coord.addEventListener('keydown', e => { if (e.key === 'Enter') commitCoord(); });
   copy.addEventListener('click', async () => {
     try { await navigator.clipboard.writeText(coord.value); } catch { coord.select(); document.execCommand('copy'); }
-    const label = copy.querySelector('span'); copy.classList.add('done'); label.textContent = 'Copied';
-    setTimeout(() => { copy.classList.remove('done'); label.textContent = 'Copy'; }, 1400);
+    copy.classList.add('done'); copy.textContent = 'Copied';
+    setTimeout(() => { copy.classList.remove('done'); copy.textContent = 'Copy'; }, 1400);
   });
   box.querySelectorAll('.param').forEach(b => b.addEventListener('click', () => {
     const on = b.getAttribute('aria-pressed') !== 'true';
@@ -522,6 +535,6 @@ requestAnimationFrame(frame);
   }));
   // Sliders show their value next to the label (placeholder inputs, no model behind them yet).
   box.querySelectorAll('.prange').forEach(l => { const r = l.querySelector('input'), o = l.querySelector('output');
-    const show = () => { o.textContent = r.value + ' h'; }; r.addEventListener('input', show); show(); });
+    const show = () => { o.textContent = r.value + ' h'; r.style.setProperty('--p', (r.value - r.min) / (r.max - r.min) * 100 + '%'); }; r.addEventListener('input', show); show(); });
   addEventListener('keydown', e => { if (e.key === 'Escape' && box.classList.contains('open')) tab.click(); });
 }

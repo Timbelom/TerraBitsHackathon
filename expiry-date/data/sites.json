@@ -1,0 +1,125 @@
+{
+ "description": "Curated landing sites. Coordinates: east longitude, planetocentric latitude, Mean-Earth/Polar-Axis frame. Prepared with AI assistance (Claude, Anthropic).",
+ "retrieved": "2026-11-14",
+ "sites": [
+  {
+   "id": "cr",
+   "name": "Connecting ridge (Site 01)",
+   "lat": -89.439021,
+   "lon": 222.844085,
+   "horizon": "data/horizon_site01.json",
+   "sources": [
+    {
+     "label": "NASA PGDA LOLA 5 m site DEMs, Site01 \"Connecting ridge\"",
+     "url": "https://pgda.gsfc.nasa.gov/products/78"
+    }
+   ],
+   "note": "Target = highest point of the 5 m raster (at least 1 km from its edge). Coordinates from the DEM file."
+  },
+  {
+   "id": "sh",
+   "name": "Shackleton rim (Site 04)",
+   "lat": -89.780252,
+   "lon": 203.785698,
+   "horizon": "data/horizon_site04.json",
+   "sources": [
+    {
+     "label": "NASA PGDA LOLA 5 m site DEMs, Site04 \"Shackleton rim\"",
+     "url": "https://pgda.gsfc.nasa.gov/products/78"
+    }
+   ],
+   "note": "Target = highest point of the 5 m raster (at least 1 km from its edge). Coordinates from the DEM file."
+  },
+  {
+   "id": "a11",
+   "name": "Apollo 11",
+   "lat": 0.67416,
+   "lon": 23.47314,
+   "sources": [
+    {
+     "label": "NASA NSSDCA, Apollo landing site coordinates (Lunar Module)",
+     "url": "https://nssdc.gsfc.nasa.gov/planetary/lunar/lunar_sites.html"
+    }
+   ],
+   "note": "Landed 20 Jul 1969. Lunar Module position, MER frame, DE421 (LRO images)."
+  },
+  {
+   "id": "a17",
+   "name": "Apollo 17",
+   "lat": 20.1911,
+   "lon": 30.7723,
+   "sources": [
+    {
+     "label": "NASA NSSDCA, Apollo landing site coordinates (Lunar Module)",
+     "url": "https://nssdc.gsfc.nasa.gov/planetary/lunar/lunar_sites.html"
+    }
+   ],
+   "note": "Landed 11 Dec 1972. Lunar Module position, MER frame, DE421 (LRO images)."
+  },
+  {
+   "id": "slim",
+   "name": "SLIM",
+   "lat": -13.316,
+   "lon": 25.251,
+   "sources": [
+    {
+     "label": "NASA NSSDCA, Spacecraft on the Moon",
+     "url": "https://nssdc.gsfc.nasa.gov/planetary/lunar/lunar_artifact_impacts.html"
+    }
+   ],
+   "note": "Landed 19 Jan 2024."
+  },
+  {
+   "id": "bg",
+   "name": "Blue Ghost 1",
+   "lat": 18.562,
+   "lon": 61.81,
+   "sources": [
+    {
+     "label": "NASA NSSDCA, Spacecraft on the Moon",
+     "url": "https://nssdc.gsfc.nasa.gov/planetary/lunar/lunar_artifact_impacts.html"
+    }
+   ],
+   "note": "Landed 2 Mar 2025."
+  },
+  {
+   "id": "ch3",
+   "name": "Chandrayaan-3",
+   "lat": -69.3741,
+   "lon": 32.32,
+   "sources": [
+    {
+     "label": "NASA NSSDCA, Spacecraft on the Moon",
+     "url": "https://nssdc.gsfc.nasa.gov/planetary/lunar/lunar_artifact_impacts.html"
+    }
+   ],
+   "note": "Landed 23 Aug 2023."
+  },
+  {
+   "id": "im1",
+   "name": "IM-1 Odysseus",
+   "lat": -80.13,
+   "lon": 1.44,
+   "sources": [
+    {
+     "label": "NASA NSSDCA, Spacecraft on the Moon",
+     "url": "https://nssdc.gsfc.nasa.gov/planetary/lunar/lunar_artifact_impacts.html"
+    }
+   ],
+   "note": "Landed 22 Feb 2024."
+  },
+  {
+   "id": "im2",
+   "name": "IM-2 Athena",
+   "lat": -84.7906,
+   "lon": 29.1957,
+   "sources": [
+    {
+     "label": "NASA NSSDCA, Spacecraft on the Moon",
+     "url": "https://nssdc.gsfc.nasa.gov/planetary/lunar/lunar_artifact_impacts.html"
+    }
+   ],
+   "note": "Landed 6 Mar 2025."
+  }
+ ]
+}

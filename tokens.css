@@ -4,14 +4,14 @@
 :root{
   /* colour */
   --bg:#02040b;
-  --surface:#0c0f15;                       /* opaque tool panels, docked next to the 3D scene */
+  --surface:rgb(17 18 20 / .84);  /* tool panels: neutral dark grey over the 3D scene, always with a 18px blur */
   --line:rgb(255 255 255 / .12);           /* the one hairline that separates panel and scene */
   --field:rgb(255 255 255 / .07);          /* input background */
   --surface-hover:rgb(255 255 255 / .09);
   --text:#f4f5f8;
-  --text-muted:#aab4c0;                    /* 8:1 on the surface; never go dimmer for text */
-  --accent:#4f8cff;                        /* agency blue, lightened for dark ground; the only accent: active state, focus, primary action */
-  --accent-ink:#05070c;                    /* text or marks on top of the accent */
+  --text-muted:#b3b7bd;  /* secondary text; never go dimmer for text */
+  --accent:#eceef1;  /* no accent colour for now: active state, focus and fills are near-white */
+  --accent-ink:#111214;  /* marks on top of the active fill */
   /* type: Inter for all tool UI (labels, values, units), Jost only for the landing headline, no monospace */
   --font-display:'Jost','DM Sans',Arial,sans-serif;
   --font-ui:'Inter','Helvetica Neue',Arial,sans-serif;

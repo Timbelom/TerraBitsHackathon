@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Expiry Date – Moon globe</title>
+<style>
+:root{--bg:#0b0f17;--card:#141b27;--ink:#e6ebf2;--mut:#8b97a8;--ok:#3ecf7a;--bad:#ef5b5b;--up:#8aa0bd;--acc:#f3c34f}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,Segoe UI,sans-serif}
+header{padding:14px 20px;display:flex;gap:16px;align-items:baseline;flex-wrap:wrap}
+h1{font-size:20px;margin:0}header a{color:var(--acc)}.badge{color:var(--mut);font-size:13px}
+main{display:grid;grid-template-columns:minmax(300px,560px) 1fr;gap:16px;padding:0 20px 24px}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+.card{background:var(--card);border-radius:12px;padding:14px}
+canvas{width:100%;height:auto;aspect-ratio:1;display:block;border-radius:12px;touch-action:none;cursor:grab;background:#05070b}
+label{display:block;color:var(--mut);font-size:13px;margin:8px 0 2px}
+input[type=date],select,button{background:#0e141e;color:var(--ink);border:1px solid #2a3547;border-radius:8px;padding:6px 10px;font:inherit}
+button{cursor:pointer}button:hover{border-color:var(--acc)}input[type=range]{width:100%}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+ul{list-style:none;margin:8px 0;padding:0}li{padding:7px 8px;border-radius:8px;cursor:pointer;display:flex;gap:8px;align-items:flex-start}
+li:hover,li.sel{background:#1b2536}.dot{flex:none;width:14px;height:14px;border-radius:50%;margin-top:3px;border:2px solid transparent}
+.dot.ok{background:var(--ok)}.dot.bad{background:var(--bad)}.dot.up{background:repeating-linear-gradient(45deg,var(--up) 0 3px,#243044 3px 6px);border-color:var(--up)}
+.s{color:var(--mut);font-size:13px}.legend{font-size:13px;color:var(--mut)}#fatal{color:#ffb4b4}
+</style></head><body>
+<header><h1>Expiry Date · Moon globe</h1><a href="index.html" id="tocmp">← Compare view</a><span class="badge" id="badge">Loading…</span></header>
+<div id="fatal" hidden class="card" style="margin:0 20px 16px"></div>
+<main id="app">
+<div class="card"><canvas id="cv" width="560" height="560"></canvas>
+<div class="row" style="margin-top:8px"><button id="bEarth">Face Earth</button><button id="bSouth">South pole</button><button id="bA11">Apollo 11</button><span class="s">Drag to rotate</span></div></div>
+<div>
+<div class="card"><div class="row"><div><label for="date">Landing date (UTC)</label><input type="date" id="date"></div>
+<div><label for="prof">Lander profile</label><select id="prof"><option value="short">Short lander (10 d, Sun 6 h, Earth 12 h)</option><option value="long">Long stay (30 d, 48 h)</option></select></div></div>
+<label for="clock">Time after landing: <b id="clk"></b></label><input type="range" id="clock" min="0" max="1440" step="1" value="0">
+<div class="s" id="sunearth"></div></div>
+<div class="card" style="margin-top:12px"><b>Sites</b> <span class="s">(colour = result of the delay strip for this date; click to select)</span><ul id="list"></ul>
+<div id="detail" class="s"></div><div class="row" style="margin-top:8px"><button id="goCmp">Open in Compare view</button></div></div>
+<div class="card legend" style="margin-top:12px"><span style="color:var(--ok)">●</span> survives ≥ 1 day of delay · <span style="color:var(--bad)">●</span> not viable at this date · <span style="color:var(--up)">◌</span> upper bound only (no terrain data).<br>
+Markers are drawn far larger than the real sites and the two polar sites lie only a few km apart – distances and sizes are distorted. The Moon surface is a schematic picture (graticule every 30°, approximate maria), not a NASA map; lighting uses the real Sun direction from JPL Horizons. Colours come from the same analysis as the Compare view.</div>
+</div></main>
+<script src="core.js"></script><script src="globe.js"></script>
+</body></html>

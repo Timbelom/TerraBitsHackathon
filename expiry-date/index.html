@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Expiry Date – Lunar landing site compare</title>
+<style>
+:root{--bg:#0d1118;--panel:#151b26;--line:#263044;--tx:#e6ebf4;--mu:#93a0b8;--g:#2f9e6b;--r:#c4493d;--ac:#6ea8ff;--sun:#ffc24a;--ea:#4aa3ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 16px;padding:14px 20px 6px}
+h1{font-size:19px;margin:0;font-weight:650}
+.sub{color:var(--mu);font-size:13px}
+.badge{margin-left:auto;background:#10261c;color:#6fd6a3;border:1px solid #1f5a40;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:600}
+main{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:14px;padding:8px 20px 20px}
+@media(max-width:980px){main{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+.card h2{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mu);margin:0 0 10px;font-weight:600}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.chip{border:1px solid var(--line);background:#101622;color:var(--tx);border-radius:999px;padding:4px 10px;font-size:12.5px;cursor:pointer}
+.chip.on{border-color:var(--ac);background:#16264a}
+.chip.dis{opacity:.4;cursor:not-allowed}
+input,button.b{font:inherit;color:var(--tx);background:#101622;border:1px solid var(--line);border-radius:8px;padding:5px 9px}
+input[type=number]{width:84px}input[type=date]{width:150px}
+button.b{cursor:pointer}button.b:hover{border-color:var(--ac)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{background:#101622;color:var(--mu);border:0;padding:6px 12px;cursor:pointer;font:inherit}
+.seg button.on{background:#16264a;color:var(--tx)}
+.srow{padding:10px 0;border-top:1px solid var(--line);cursor:pointer}
+.srow:first-of-type{border-top:0}
+.srow.sel{background:linear-gradient(90deg,#16264a55,transparent);margin:0 -8px;padding:10px 8px;border-radius:8px}
+.top{display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap}
+.nm{font-weight:600}
+.lab{font-size:15px;font-weight:650}
+.lab.bad{color:#ff8b7e}.lab.ok{color:#6fd6a3}.lab.up{color:#ffc24a}
+.note{color:var(--mu);font-size:12px}
+.cells{display:grid;grid-template-columns:repeat(30,1fr);gap:2px;margin:7px 0 3px}
+.c{height:22px;border-radius:3px;background:var(--r)}
+.c.g{background:var(--g)}
+.c.up{background-image:repeating-linear-gradient(135deg,rgba(0,0,0,.38) 0 3px,transparent 3px 7px)}
+.c.cur{outline:2px solid #fff;outline-offset:1px}
+.ticks{display:grid;grid-template-columns:repeat(30,1fr);gap:2px;font-size:10px;color:var(--mu)}
+.ticks span{text-align:center}
+.why{min-height:18px;font-size:12px;color:var(--mu);margin-top:3px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--mu);margin-top:8px}
+.sw{display:inline-block;width:11px;height:11px;border-radius:2px;vertical-align:-1px;margin-right:5px}
+.explain{margin-top:10px;font-size:13px;color:var(--tx);border-left:3px solid var(--ac);padding:2px 0 2px 10px}
+svg{display:block;width:100%;height:auto}
+.kp{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
+.kp div{background:#101622;border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.kp b{display:block;font-size:17px}
+.kp span{font-size:11.5px;color:var(--mu)}
+.h3{margin:14px 0 0;font-size:12px;color:var(--mu)}
+input[type=range]{width:100%;accent-color:var(--ac)}
+details{margin-top:10px;font-size:13px}
+summary{cursor:pointer;color:var(--ac)}
+.adj{display:grid;grid-template-columns:auto 1fr auto;gap:6px 10px;align-items:center;margin-top:8px}
+#fatal{margin:20px;padding:16px;border:1px solid #6b2a24;background:#2a1412;border-radius:12px;line-height:1.55}
+code{background:#101622;border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+.msg{color:#ffb4a8;font-size:12px;min-height:16px;margin-top:4px}
+a{color:var(--ac)}
+ul.src{margin:6px 0 0;padding-left:18px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Expiry Date <span style="color:var(--mu);font-weight:400">· Compare landing sites</span></h1>
+  <span class="sub">Green = enough sunlight and Earth contact for the whole mission, even if the launch slips.</span>
+  <span class="badge" id="badge">Loading data…</span>
+</header>
+<div id="fatal" hidden></div>
+<main id="app">
+  <section>
+    <div class="card">
+      <h2>1 · Choose up to three sites</h2>
+      <div class="row" id="chips"></div>
+      <div class="row" style="margin-top:10px">
+        <span class="note">Custom coordinates</span>
+        <input type="number" id="clat" step="0.01" placeholder="lat °" value="-86.2">
+        <input type="number" id="clon" step="0.01" placeholder="lon °E" value="45">
+        <button class="b" id="cadd">Add</button>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <span class="note">Landing date</span>
+        <input type="date" id="date">
+        <button class="b" id="plus">Launch +1 day</button>
+        <span class="seg" id="prof"></span>
+      </div>
+      <div class="msg" id="datemsg"></div>
+      <details>
+        <summary>Adjust</summary>
+        <div class="adj">
+          <span>Max. Sun gap (&lt;50 % disk)</span><input type="range" id="dr" min="1" max="96" step="1"><b id="dv"></b>
+          <span>Max. Earth gap (&lt;50 % disk)</span><input type="range" id="gr" min="1" max="96" step="1"><b id="gv"></b>
+        </div>
+        <div class="note" style="margin-top:6px">These two limits are team assumptions, not NASA values.</div>
+      </details>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <h2>2 · What if the launch slips? (0–30 days delay)</h2>
+      <div id="strips"></div>
+      <div class="ticks" id="ticks" style="margin-top:2px"></div>
+      <div class="legend">
+        <span><i class="sw" style="background:var(--g)"></i>mission works</span>
+        <span><i class="sw" style="background:var(--r)"></i>too long without Sun or Earth</span>
+        <span><i class="sw" style="background:repeating-linear-gradient(135deg,#555 0 3px,#999 3px 7px)"></i>hatched = upper bound only (no terrain data)</span>
+      </div>
+      <div class="explain">At the pole the Sun stays within about 1.5 degrees of the horizon, so a small ridge or a few days decide between light and dark.</div>
+    </div>
+  </section>
+
+  <section>
+    <div class="card">
+      <h2>3 · Sky at <span id="skyname"></span></h2>
+      <svg id="sky" viewBox="0 0 720 260"></svg>
+      <div class="note" id="skynote"></div>
+      <div class="kp" id="kp"></div>
+      <div class="h3" id="kp2h"></div>
+      <div class="kp" id="kp2" style="margin-top:6px"></div>
+      <div style="margin-top:12px">
+        <div class="row" style="justify-content:space-between"><span class="note">Mission clock</span><b id="clk"></b></div>
+        <input type="range" id="tl" min="0" max="1440" step="1" value="0">
+        <div class="note">One slider for all rows. Click a day in the strip to jump to that launch.</div>
+      </div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <h2>How to read this</h2>
+      <div class="note" style="font-size:13px;line-height:1.55">
+        Each row is one site. Each square is one possible launch delay (day 0 = your landing date). A square is green when, during the whole stay, the Sun is never below half-visible for longer than the Sun limit, and the Earth never for longer than the Earth limit. The label counts the green squares from day 0 until the first red one.<br><br>
+        Sites with terrain data show a range (horizon ±1 σ of the LOLA height uncertainty). Sites without terrain data on the polar cap only show an upper bound, because mountains can only make things worse.
+      </div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <h2>Data basis</h2>
+      <div class="note" style="font-size:12.5px;line-height:1.55" id="basis"></div>
+    </div>
+  </section>
+</main>
+<script src="core.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
