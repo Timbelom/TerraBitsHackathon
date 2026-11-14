@@ -14,20 +14,21 @@ from rasterio.enums import Resampling
 from rasterio.warp import transform
 
 # ==============================================================================
-# 1. CONFIGURATION & MISSION PARAMETERS
+# 1. CONFIGURATION & MISSION PARAMETERS (MAX DETAIL)
 # ==============================================================================
 GLOBAL_TIF_CANDIDATES = [
     "LDEM64_PA_pixel_202405 copy.tif",
     "LDEM64_PA_pixel_202405.tif",
 ]
-OUTPUT_HTML = "lunar_global_200km_tiles_3d.html"
+OUTPUT_HTML = "lunar_global_200km_max_detail_3d.html"
 
 MOON_RADIUS_M = 1737400.0       # IAU Mean Lunar Radius in meters
 vertical_exaggeration = 1.0     # 1.0 = true 1:1 physical proportions
-TARGET_LAT_ROWS = 640           # Global sphere resolution: 640 x 1280
-TILES_PER_CUBE_EDGE = 14        # 6 * 14 * 14 = 1,176 tiles (~200 x 200 km each)
-TILE_SIZE_KM = 200.0            # 200 km x 200 km square extent
-TILE_GRID_RES = 160             # 160 x 160 vertices per 200x200 km tile view
+TARGET_LAT_ROWS = 2160          # Max global DEM grid: 2160 x 4320
+TILES_PER_CUBE_EDGE = 20        # 6 * 20 * 20 = 2,400 overlapping 200x200 km tiles
+TILE_SIZE_KM = 200.0            # Visible square extent: 200 km x 200 km
+SHADOW_PAD_KM = 25.0            # +25 km on each side (250x250 km total shadow caster, clipped to 200x200 km)
+TILE_GRID_RES = 512             # MAX VERTEX DENSITY: 512 x 512 vertices per tile (262k triangles)
 
 lunar_geo_crs = "+proj=longlat +R=1737400 +no_defs"
 
@@ -35,6 +36,19 @@ lunar_geo_crs = "+proj=longlat +R=1737400 +no_defs"
 START_TIME_UTC = "2027-01-01 00:00"
 STOP_TIME_UTC = "2028-01-01 00:00"
 STEP_SIZE = "1h"
+
+
+def ask_yes_no(prompt_text: str, default: bool = False) -> bool:
+    hint = "[J/n]" if default else "[j/N]"
+    while True:
+        ans = input(f"{prompt_text} {hint}: ").strip().lower()
+        if not ans:
+            return default
+        if ans in ("j", "ja", "y", "yes", "1"):
+            return True
+        if ans in ("n", "nein", "no", "0"):
+            return False
+        print("Bitte 'j' (Ja) oder 'n' (Nein) eingeben.")
 
 
 # ==============================================================================
@@ -76,7 +90,7 @@ def fetch_jpl_horizons_ephemeris(
         + urllib.parse.urlencode(params)
     )
     req = urllib.request.Request(
-        url, headers={"User-Agent": "LunarGlobal200kmTiles3D-JPL/2.0"}
+        url, headers={"User-Agent": "LunarGlobalMaxDetail-JPL/3.0"}
     )
 
     with urllib.request.urlopen(req, timeout=60) as resp:
@@ -198,7 +212,7 @@ def encode_u16_b64(arr: np.ndarray, vmin: float, vmax: float) -> str:
 
 
 # ==============================================================================
-# 3. GLOBAL ANNUAL SUNLIGHT & RADIO (DTE) EXPOSURE MAP COMPUTATION
+# 3. GLOBAL ANNUAL SUNLIGHT & RADIO (DTE) EXPOSURE MAP COMPUTATION (OPTIONAL)
 # ==============================================================================
 def sample_grid_bilinear(
     grid: np.ndarray,
@@ -251,8 +265,8 @@ def compute_global_exposure_maps(
     lat_min, lat_max = float(np.min(lats_1d)), float(np.max(lats_1d))
     lon_min, lon_max = float(np.min(lons_1d)), float(np.max(lons_1d))
 
-    comp_h = min(rows, 256)
-    comp_w = min(cols, 512)
+    comp_h = min(rows, 320)
+    comp_w = min(cols, 640)
     c_lats = np.linspace(lat_max, lat_min, comp_h, dtype=np.float64)
     if is_full_globe:
         c_lons = -180.0 + (np.arange(comp_w, dtype=np.float64) / comp_w) * 360.0
@@ -372,17 +386,23 @@ def compute_global_exposure_maps(
 
 
 # ==============================================================================
-# 4. LOAD GLOBAL LUNAR DEM (LDEM64)
+# 4. TERMINAL PROMPT & LOAD GLOBAL LUNAR DEM (LDEM64)
 # ==============================================================================
+load_exposure_maps = ask_yes_no(
+    "Avg Sonnenlicht & Radio Exposure (2027) berechnen und laden?",
+    default=False,
+)
+
 global_tif_path = next((p for p in GLOBAL_TIF_CANDIDATES if Path(p).exists()), GLOBAL_TIF_CANDIDATES[0])
-print(f"[1/3] Loading Global Lunar GeoTIFF: {global_tif_path} ...")
+total_steps_log = 3 if load_exposure_maps else 2
+print(f"[1/{total_steps_log}] Loading Global Lunar GeoTIFF (Max Detail {TARGET_LAT_ROWS}x{TARGET_LAT_ROWS*2}): {global_tif_path} ...")
 
 with rasterio.open(global_tif_path) as dataset:
     raw_h, raw_w = dataset.height, dataset.width
     aspect = raw_w / max(1, raw_h)
     target_rows = TARGET_LAT_ROWS
     target_cols = max(
-        TARGET_LAT_ROWS, min(1280, int(round(TARGET_LAT_ROWS * aspect)))
+        TARGET_LAT_ROWS, min(4320, int(round(TARGET_LAT_ROWS * aspect)))
     )
 
     g_z_grid = dataset.read(
@@ -468,15 +488,15 @@ lon_min, lon_max = float(np.min(lons_norm)), float(np.max(lons_norm))
 is_full_globe = (lon_max - lon_min) >= 355.0 and (lat_max - lat_min) >= 175.0
 
 print(
-    f"Global Grid: {g_z_grid.shape[0]}x{g_z_grid.shape[1]} | "
+    f"Global Max-Detail Grid: {g_z_grid.shape[0]}x{g_z_grid.shape[1]} | "
     f"Elevation: {g_min_z:.1f} m to {g_max_z:.1f} m"
 )
 
 
 # ==============================================================================
-# 5. QUERY JPL HORIZONS EPHEMERIS & COMPUTE GLOBAL EXPOSURE MAPS
+# 5. QUERY JPL HORIZONS EPHEMERIS & OPTIONAL EXPOSURE MAPS
 # ==============================================================================
-print(f"[2/3] Querying NASA JPL Horizons API ({START_TIME_UTC} to {STOP_TIME_UTC})...")
+print(f"[2/{total_steps_log}] Querying NASA JPL Horizons API ({START_TIME_UTC} to {STOP_TIME_UTC})...")
 try:
     timestamps, sun_az, sun_el = fetch_jpl_horizons_ephemeris(
         target_id="10",
@@ -507,30 +527,41 @@ except Exception as exc:
 sun_dirs_moon = az_el_to_moon_fixed_dirs(0.0, 0.0, sun_az, sun_el)
 earth_dirs_moon = az_el_to_moon_fixed_dirs(0.0, 0.0, earth_az, earth_el)
 
-print("[3/3] Computing global 2027 Average Sunlight & Radio (DTE) Exposure maps...")
-sun_exposure_grid, radio_exposure_grid = compute_global_exposure_maps(
-    z_grid=g_z_grid,
-    lats_1d=lats_1d,
-    lons_1d=lons_norm,
-    is_full_globe=is_full_globe,
-    exaggeration=vertical_exaggeration,
-    sun_dirs_moon=sun_dirs_moon,
-    earth_dirs_moon=earth_dirs_moon,
-)
+if load_exposure_maps:
+    print(f"[3/{total_steps_log}] Computing global 2027 Average Sunlight & Radio (DTE) Exposure maps...")
+    sun_exposure_grid, radio_exposure_grid = compute_global_exposure_maps(
+        z_grid=g_z_grid,
+        lats_1d=lats_1d,
+        lons_1d=lons_norm,
+        is_full_globe=is_full_globe,
+        exaggeration=vertical_exaggeration,
+        sun_dirs_moon=sun_dirs_moon,
+        earth_dirs_moon=earth_dirs_moon,
+    )
+    sun_exp_b64 = encode_u16_b64(sun_exposure_grid, 0.0, 1.0)
+    radio_exp_b64 = encode_u16_b64(radio_exposure_grid, 0.0, 1.0)
+else:
+    print("Avg Sonnenlicht & Radio Exposure übersprungen (im Web-Viewer deaktiviert).")
+    sun_exp_b64 = ""
+    radio_exp_b64 = ""
 
 sun_dirs_xyz = moon_fixed_to_threejs_list(sun_dirs_moon)
 earth_dirs_xyz = moon_fixed_to_threejs_list(earth_dirs_moon)
 
 
 # ==============================================================================
-# 6. PACKAGE PAYLOAD & GENERATE UNIFIED GLOBAL + 200x200 KM TILES HTML VIEWER
+# 6. PACKAGE PAYLOAD & GENERATE MAX-DETAIL HTML VIEWER
 # ==============================================================================
+total_tiles_count = 6 * TILES_PER_CUBE_EDGE * TILES_PER_CUBE_EDGE
+
 combined_payload = {
     "moon_radius_m": MOON_RADIUS_M,
     "exaggeration": vertical_exaggeration,
     "tiles_per_edge": TILES_PER_CUBE_EDGE,
     "tile_size_km": TILE_SIZE_KM,
+    "shadow_pad_km": SHADOW_PAD_KM,
     "tile_grid_res": TILE_GRID_RES,
+    "has_exposure_maps": bool(load_exposure_maps),
     "global": {
         "rows": int(g_z_grid.shape[0]),
         "cols": int(g_z_grid.shape[1]),
@@ -540,8 +571,8 @@ combined_payload = {
         "lon_min": round(lon_min, 6),
         "lon_max": round(lon_max, 6),
         "z_b64": encode_u16_b64(g_z_grid, g_min_z, g_max_z),
-        "sun_exp_b64": encode_u16_b64(sun_exposure_grid, 0.0, 1.0),
-        "radio_exp_b64": encode_u16_b64(radio_exposure_grid, 0.0, 1.0),
+        "sun_exp_b64": sun_exp_b64,
+        "radio_exp_b64": radio_exp_b64,
         "min_z": round(g_min_z, 2),
         "max_z": round(g_max_z, 2),
     },
@@ -558,13 +589,12 @@ html_template = f"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Lunar Global + 200×200 km Tiles 3D (LOLA + JPL Horizons)</title>
+<title>Lunar Global + 200×200 km Max-Detail Tiles 3D (LOLA + JPL)</title>
 <style>
   * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }}
   body {{ background: #07090e; color: #e6edf3; overflow: hidden; }}
   #canvas-container {{ width: 100vw; height: 100vh; display: block; }}
 
-  /* Smooth radial transition veil for seamless scale handoff (10 km/u <-> 1 km/u) */
   #transition-veil {{
     position: fixed; inset: 0; pointer-events: none; z-index: 40;
     background: radial-gradient(circle at center, rgba(11, 15, 24, 0.72) 0%, rgba(7, 9, 14, 0.98) 100%);
@@ -626,7 +656,10 @@ html_template = f"""<!DOCTYPE html>
     border-radius: 6px; transition: all 0.18s ease; color: #8b949e;
     cursor: pointer; border: 1px solid transparent;
   }}
-  .mode-btn:hover {{ color: #e6edf3; background: rgba(255, 255, 255, 0.05); }}
+  .mode-btn:hover:not(.disabled) {{ color: #e6edf3; background: rgba(255, 255, 255, 0.05); }}
+  .mode-btn.disabled {{
+    opacity: 0.36; cursor: not-allowed; pointer-events: none; text-decoration: line-through;
+  }}
   .mode-btn.active.shadow-mode {{
     background: #d29922; color: #0d1117; box-shadow: 0 2px 8px rgba(210, 153, 34, 0.4);
   }}
@@ -813,40 +846,35 @@ html_template = f"""<!DOCTYPE html>
 </head>
 <body>
 <div id="canvas-container"></div>
-<div id="transition-veil"><div id="transition-label">Zooming to 200×200 km Tile...</div></div>
+<div id="transition-veil"><div id="transition-label">Zooming to Max-Detail 200×200 km Tile...</div></div>
 
 <div id="hud">
-  <!-- RETURN TO GLOBAL MOON BUTTON (VISIBLE IN 200x200 KM TILE VIEW) -->
   <button class="nav-action-btn back-global" id="back-to-global-btn" style="display: none;">
     ← Zurück zur Mondansicht
   </button>
 
   <h1 id="hud-title">Global LOLA + JPL Horizons 3D</h1>
-  <div class="subtitle" id="hud-subtitle">1:1 Metric Lunar Sphere • 1,176 × (200×200 km)</div>
+  <div class="subtitle" id="hud-subtitle">1:1 Metric Lunar Sphere • {total_tiles_count:,} × (200×200 km, 512px Grid)</div>
 
-  <!-- 4-VIEW MAP MODE SELECTOR (WORKS ON BOTH GLOBE & 200x200 KM TILE) -->
   <div class="map-mode-grid" id="map-mode-selector">
     <div class="mode-btn active shadow-mode" data-mode="shadow">☀️ JPL Sun Shadows</div>
     <div class="mode-btn" data-mode="height">⛰️ Elevation Map</div>
-    <div class="mode-btn" data-mode="sunexp">🔆 Avg Sunlight Map</div>
-    <div class="mode-btn" data-mode="radio">📡 Radio Exposure</div>
+    <div class="mode-btn" data-mode="sunexp" id="btn-mode-sunexp">🔆 Avg Sunlight Map</div>
+    <div class="mode-btn" data-mode="radio" id="btn-mode-radio">📡 Radio Exposure</div>
   </div>
 
   <div class="mode-info-banner" id="mode-info-banner" style="display: none;"></div>
 
-  <!-- 200x200 KM TILE GRID TOGGLE (GLOBAL VIEW) -->
-  <div class="sub-toggle-row" id="tilegrid-toggle-row" title="Show/hide the 1,176 × (200×200 km) square grid across the Moon">
-    <span class="sub-toggle-label">200×200 km Quadrate (1.176)</span>
+  <div class="sub-toggle-row" id="tilegrid-toggle-row" title="Ein-/Ausblenden der {total_tiles_count:,} überlappenden Quadrate">
+    <span class="sub-toggle-label">200×200 km Quadrate ({total_tiles_count:,})</span>
     <div class="switch-pill on" id="tilegrid-switch-pill"></div>
   </div>
 
-  <!-- GLOBAL GRATICULE TOGGLE -->
   <div class="sub-toggle-row" id="graticule-toggle-row" title="Toggle 30° latitude/longitude grid on the Moon">
     <span class="sub-toggle-label">Lat/Lon Graticule (30°)</span>
     <div class="switch-pill on" id="graticule-switch-pill"></div>
   </div>
 
-  <!-- EPHEMERIS TELEMETRY -->
   <div id="sun-controls">
     <div class="ephem-grid">
       <div class="ephem-box">
@@ -860,9 +888,8 @@ html_template = f"""<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- CONTOUR CONTROLS (FOR HEIGHT MAP IN BOTH VIEWS) -->
   <div id="height-controls" style="display: none;">
-    <div class="sub-toggle-row" id="contour-toggle-row" title="Toggle topographic contour lines on the 3D surface">
+    <div class="sub-toggle-row" id="contour-toggle-row" title="Toggle topographic contour lines">
       <span class="sub-toggle-label">Surface Elevation Lines</span>
       <div class="switch-pill on" id="contour-switch-pill"></div>
     </div>
@@ -880,7 +907,6 @@ html_template = f"""<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- SELECTED 200x200 KM SQUARE TELEMETRY CARD -->
   <div class="site-card">
     <div class="site-header">
       <div class="site-title" id="site-title">🧩 Quadrat #0001 (200×200 km)</div>
@@ -909,10 +935,10 @@ html_template = f"""<!DOCTYPE html>
     </div>
 
     <button class="nav-action-btn enter-detail" id="enter-tile-btn">
-      🔍 Quadrat (200×200 km) in 3D öffnen
+      🔍 Max-Detail (512px) Quadrat in 3D öffnen
     </button>
     <div class="site-hint" id="site-hint">
-      Klicke auf ein beliebiges <b>200×200 km Quadrat</b> auf dem Mond, um die 3D-Landschaft mit JPL-Schattenwurf zu öffnen.
+      Klicke auf ein beliebiges <b>200×200 km Quadrat</b>, um das hochauflösende 512px-Terrain mit JPL-Schattenwurf zu öffnen.
     </div>
   </div>
 </div>
@@ -961,13 +987,23 @@ import {{ OrbitControls }} from 'three/addons/controls/OrbitControls.js';
 const DATA = {json.dumps(combined_payload, separators=(",", ":"))};
 const GDATA = DATA.global;
 const EPHEM = DATA.ephemeris;
+const HAS_EXPOSURE_MAPS = Boolean(DATA.has_exposure_maps);
 const TOTAL_STEPS = EPHEM.timestamps.length;
 const SOLAR_CONSTANT_WM2 = 1361;
 const SOLAR_ANGULAR_RADIUS_DEG = 0.2666;
 const SOLAR_ANGULAR_RADIUS_RAD = THREE.MathUtils.degToRad(SOLAR_ANGULAR_RADIUS_DEG);
 
-// Fast instant decoding of Base64 uint16 arrays (< 5 ms total, zero startup loading bar)
+if (!HAS_EXPOSURE_MAPS) {{
+  const btnSunExp = document.getElementById('btn-mode-sunexp');
+  const btnRadio = document.getElementById('btn-mode-radio');
+  btnSunExp.classList.add('disabled');
+  btnRadio.classList.add('disabled');
+  btnSunExp.title = 'Im Terminal deaktiviert';
+  btnRadio.title = 'Im Terminal deaktiviert';
+}}
+
 function decodeU16Grid(b64, vMin, vMax) {{
+  if (!b64) return null;
   const bin = atob(b64);
   const len = bin.length >> 1;
   const out = new Float32Array(len);
@@ -981,14 +1017,11 @@ function decodeU16Grid(b64, vMin, vMax) {{
 }}
 
 const G_Z_VALUES = decodeU16Grid(GDATA.z_b64, GDATA.min_z, GDATA.max_z);
-const G_SUN_EXP_VALUES = decodeU16Grid(GDATA.sun_exp_b64, 0.0, 1.0);
-const G_RADIO_EXP_VALUES = decodeU16Grid(GDATA.radio_exp_b64, 0.0, 1.0);
+const G_SUN_EXP_VALUES = HAS_EXPOSURE_MAPS ? decodeU16Grid(GDATA.sun_exp_b64, 0.0, 1.0) : null;
+const G_RADIO_EXP_VALUES = HAS_EXPOSURE_MAPS ? decodeU16Grid(GDATA.radio_exp_b64, 0.0, 1.0) : null;
 const SUN_DIRS = new Float32Array(EPHEM.sun_dirs);
 const EARTH_DIRS = new Float32Array(EPHEM.earth_dirs);
 
-// ==============================================================================
-// SHARED RENDERER, SCENE, CAMERA & ORBIT CONTROLS
-// ==============================================================================
 const container = document.getElementById('canvas-container');
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x07090e);
@@ -1004,6 +1037,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.shadowMap.autoUpdate = false;
+renderer.localClippingEnabled = true;
 container.appendChild(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -1013,7 +1047,6 @@ controls.dampingFactor = 0.06;
 const ambientLight = new THREE.AmbientLight(0x161d2b, 0.04);
 scene.add(ambientLight);
 
-// Camera headlight used in non-shadow data maps (Elevation, Avg Sunlight, Radio)
 const mapReliefLight = new THREE.DirectionalLight(0xffffff, 0.0);
 camera.add(mapReliefLight);
 scene.add(camera);
@@ -1119,9 +1152,6 @@ function drawPowerStrip(hourlyLitArr) {{
   }}
 }}
 
-// ==============================================================================
-// SPHERICAL DEM SAMPLING & CUBED-SPHERE 200x200 KM TILES (1,176 SQUARES)
-// ==============================================================================
 const R_MOON_M = DATA.moon_radius_m;
 const R_MOON_KM = R_MOON_M / 1000.0;
 const G_ROWS = GDATA.rows;
@@ -1130,6 +1160,7 @@ const G_LAT_SPAN = GDATA.lat_max - GDATA.lat_min;
 const G_LON_SPAN = GDATA.lon_max - GDATA.lon_min;
 
 function sampleGlobalGridAtLatLon(gridArr, latDeg, lonDeg) {{
+  if (!gridArr) return 0.0;
   const clampedLat = THREE.MathUtils.clamp(latDeg, GDATA.lat_min, GDATA.lat_max);
   const rF = ((GDATA.lat_max - clampedLat) / Math.max(1e-9, G_LAT_SPAN)) * (G_ROWS - 1);
   const r0 = Math.min(G_ROWS - 1, Math.max(0, rF | 0));
@@ -1157,16 +1188,6 @@ function sampleGlobalGridAtLatLon(gridArr, latDeg, lonDeg) {{
 
 function getElevationMetersAtLatLon(latDeg, lonDeg) {{
   return sampleGlobalGridAtLatLon(G_Z_VALUES, latDeg, lonDeg);
-}}
-
-// Moon-fixed unit vectors <-> Three.js world unit vectors
-// Moon-fixed: (X = 0°E, Y = 90°E, Z = North Pole)
-// Three.js:   (X = 0°E, Y = North Pole, Z = -90°E)
-function latLonToMoonUnit(latDeg, lonDeg) {{
-  const lat = THREE.MathUtils.degToRad(latDeg);
-  const lon = THREE.MathUtils.degToRad(lonDeg);
-  const cLat = Math.cos(lat);
-  return new THREE.Vector3(cLat * Math.cos(lon), cLat * Math.sin(lon), Math.sin(lat));
 }}
 
 function moonUnitToLatLon(u) {{
@@ -1219,7 +1240,6 @@ function moonUnitToTileKm(basis, u) {{
   return [(px / pl) * rho, (py / pl) * rho];
 }}
 
-// Build 1,176 Cubed-Sphere 200x200 km Tiles covering the entire Moon
 const LUNAR_TILES = (() => {{
   const N = DATA.tiles_per_edge;
   const faces = [
@@ -1250,8 +1270,8 @@ const LUNAR_TILES = (() => {{
           lat: latDeg,
           lon: lonDeg,
           centerElevM,
-          sunExp: sampleGlobalGridAtLatLon(G_SUN_EXP_VALUES, latDeg, lonDeg),
-          radioExp: sampleGlobalGridAtLatLon(G_RADIO_EXP_VALUES, latDeg, lonDeg),
+          sunExp: HAS_EXPOSURE_MAPS ? sampleGlobalGridAtLatLon(G_SUN_EXP_VALUES, latDeg, lonDeg) : 0,
+          radioExp: HAS_EXPOSURE_MAPS ? sampleGlobalGridAtLatLon(G_RADIO_EXP_VALUES, latDeg, lonDeg) : 0,
         }});
         idx++;
       }}
@@ -1262,7 +1282,7 @@ const LUNAR_TILES = (() => {{
 
 
 // ==============================================================================
-// VIEW 1: GLOBAL 3D LUNAR SPHERE + 1,176 x (200x200 KM) SQUARES (1 UNIT = 10 KM)
+// VIEW 1: GLOBAL 3D LUNAR SPHERE + 2,400 SQUARES
 // ==============================================================================
 const GlobalView = (() => {{
   const group = new THREE.Group();
@@ -1283,7 +1303,6 @@ const GlobalView = (() => {{
     );
   }}
 
-  // Starfield backdrop
   const starCount = 2200;
   const starPos = new Float32Array(starCount * 3);
   for (let i = 0; i < starCount; i++) {{
@@ -1310,8 +1329,8 @@ const GlobalView = (() => {{
 
   const positions = new Float32Array(numVerts * 3);
   const heightColors = new Float32Array(numVerts * 3);
-  const sunExpColors = new Float32Array(numVerts * 3);
-  const radioExpColors = new Float32Array(numVerts * 3);
+  const sunExpColors = HAS_EXPOSURE_MAPS ? new Float32Array(numVerts * 3) : null;
+  const radioExpColors = HAS_EXPOSURE_MAPS ? new Float32Array(numVerts * 3) : null;
   const zRange = Math.max(1, GDATA.max_z - GDATA.min_z);
 
   for (let r = 0; r < rows; r++) {{
@@ -1340,11 +1359,13 @@ const GlobalView = (() => {{
       const hc = sampleStops((zVal - GDATA.min_z) / zRange, VIRIDIS_STOPS);
       heightColors[b3] = hc[0]; heightColors[b3 + 1] = hc[1]; heightColors[b3 + 2] = hc[2];
 
-      const sc = sampleStops(G_SUN_EXP_VALUES[gridIdx], SUN_EXP_STOPS);
-      sunExpColors[b3] = sc[0]; sunExpColors[b3 + 1] = sc[1]; sunExpColors[b3 + 2] = sc[2];
+      if (HAS_EXPOSURE_MAPS) {{
+        const sc = sampleStops(G_SUN_EXP_VALUES[gridIdx], SUN_EXP_STOPS);
+        sunExpColors[b3] = sc[0]; sunExpColors[b3 + 1] = sc[1]; sunExpColors[b3 + 2] = sc[2];
 
-      const rc = sampleStops(G_RADIO_EXP_VALUES[gridIdx], RADIO_EXP_STOPS);
-      radioExpColors[b3] = rc[0]; radioExpColors[b3 + 1] = rc[1]; radioExpColors[b3 + 2] = rc[2];
+        const rc = sampleStops(G_RADIO_EXP_VALUES[gridIdx], RADIO_EXP_STOPS);
+        radioExpColors[b3] = rc[0]; radioExpColors[b3 + 1] = rc[1]; radioExpColors[b3 + 2] = rc[2];
+      }}
     }}
   }}
 
@@ -1404,9 +1425,6 @@ const GlobalView = (() => {{
   terrainMesh.receiveShadow = true;
   group.add(terrainMesh);
 
-  // ============================================================================
-  // 1,176 x (200x200 KM) SQUARES OVERLAY ON THE GLOBAL MOON + HOVER HIGHLIGHT
-  // ============================================================================
   let showTileGrid = true;
   const halfTileKm = DATA.tile_size_km * 0.5;
   const edgeSegs = 4;
@@ -1448,11 +1466,10 @@ const GlobalView = (() => {{
   tileGridGeo.setAttribute('position', new THREE.BufferAttribute(allTilePts, 3));
   const tileGridLines = new THREE.LineSegments(
     tileGridGeo,
-    new THREE.LineBasicMaterial({{ color: 0x79c0ff, transparent: true, opacity: 0.34 }})
+    new THREE.LineBasicMaterial({{ color: 0x79c0ff, transparent: true, opacity: 0.28 }})
   );
   group.add(tileGridLines);
 
-  // Hovered 200x200 km square highlight
   const hoverTileGeo = new THREE.BufferGeometry();
   hoverTileGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(96), 3));
   const hoverTileLines = new THREE.LineSegments(
@@ -1462,7 +1479,6 @@ const GlobalView = (() => {{
   hoverTileLines.visible = false;
   group.add(hoverTileLines);
 
-  // Selected 200x200 km square highlight
   const selectedTileGeo = new THREE.BufferGeometry();
   selectedTileGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(96), 3));
   const selectedTileLines = new THREE.LineSegments(
@@ -1484,7 +1500,6 @@ const GlobalView = (() => {{
     }}
   }}
 
-  // Analytical spherical DEM sampling & raycasting
   const degPerRow = G_LAT_SPAN / Math.max(1, rows - 1);
   const degPerCol = GDATA.is_full_globe ? (360.0 / cols) : (G_LON_SPAN / Math.max(1, cols - 1));
   const angularStepDeg = Math.min(degPerRow, degPerCol) * 0.5;
@@ -1516,24 +1531,6 @@ const GlobalView = (() => {{
     const pW = latLonToWorldVec(latDeg, lonDeg - lonEps, rW);
 
     return targetVec.crossVectors(pE.sub(pW), pN.sub(pS)).normalize();
-  }}
-
-  function isSphereTerrainOccluded(ox, oy, oz, dx, dy, dz) {{
-    const maxDist = R_MOON_W * 1.1;
-    for (let t = worldMarchStep; t < maxDist; t += worldMarchStep) {{
-      const px = ox + dx * t;
-      const py = oy + dy * t;
-      const pz = oz + dz * t;
-      const rSq = px * px + py * py + pz * pz;
-      if (rSq > MAX_R_W * MAX_R_W) return false;
-
-      const r = Math.sqrt(rSq);
-      const latDeg = THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(py / r, -1, 1)));
-      const lonDeg = THREE.MathUtils.radToDeg(Math.atan2(-pz, px));
-      const surfR = (R_MOON_M + getElevationMetersAtLatLon(latDeg, lonDeg) * DATA.exaggeration) * SCALE;
-      if (r <= surfR) return true;
-    }}
-    return false;
   }}
 
   const _rayOrigin = new THREE.Vector3();
@@ -1583,14 +1580,13 @@ const GlobalView = (() => {{
 
   function findTileIndexAtWorldPoint(worldPt) {{
     const len = worldPt.length() || 1;
-    // Convert Three.js world unit -> Moon-fixed unit
     const moonU = new THREE.Vector3(worldPt.x / len, -worldPt.z / len, worldPt.y / len);
     let bestIdx = -1;
     let bestDistSq = Infinity;
 
     for (let i = 0; i < LUNAR_TILES.length; i++) {{
       const t = LUNAR_TILES[i];
-      if (moonU.dot(t.centerMoon) < 0.991) continue;
+      if (moonU.dot(t.centerMoon) < 0.990) continue;
       const xy = moonUnitToTileKm(t.basis, moonU);
       if (xy && Math.abs(xy[0]) <= halfTileKm && Math.abs(xy[1]) <= halfTileKm) {{
         const d2 = xy[0] * xy[0] + xy[1] * xy[1];
@@ -1603,7 +1599,6 @@ const GlobalView = (() => {{
     return bestIdx;
   }}
 
-  // 30° Lat/Lon Graticule
   let showGraticule = true;
   const graticuleGroup = new THREE.Group();
   group.add(graticuleGroup);
@@ -1650,7 +1645,6 @@ const GlobalView = (() => {{
     ));
   }})();
 
-  // Spherical contour lines
   let showSurfaceContours = true;
   let currentContourInterval = 1000;
   const surfaceContoursMesh = new THREE.LineSegments(
@@ -1764,7 +1758,6 @@ const GlobalView = (() => {{
   }}
   rebuildSurfaceContours(currentContourInterval);
 
-  // Global directional sunlight & sky markers
   const sunLight = new THREE.DirectionalLight(0xfff8e7, 3.3);
   sunLight.castShadow = true;
   sunLight.shadow.mapSize.width = 4096;
@@ -1871,7 +1864,6 @@ const GlobalView = (() => {{
   );
   group.add(earthTrail);
 
-  // Selected tile horizon & annual stats
   let selectedTileIdx = 0;
   const siteOrigin = new THREE.Vector3();
   const siteUpDir = new THREE.Vector3();
@@ -2003,7 +1995,6 @@ const GlobalView = (() => {{
     }};
   }}
 
-  // Default selected square: South Pole region
   const defaultSouthIdx = LUNAR_TILES.reduce(
     (best, t, i) => (t.lat < LUNAR_TILES[best].lat ? i : best),
     0
@@ -2013,6 +2004,9 @@ const GlobalView = (() => {{
   let mapMode = 'shadow';
 
   function setMapMode(mode) {{
+    if (!HAS_EXPOSURE_MAPS && (mode === 'sunexp' || mode === 'radio')) {{
+      mode = 'shadow';
+    }}
     mapMode = mode;
     if (mode === 'shadow') {{
       terrainMesh.material = shadowMaterial;
@@ -2035,8 +2029,8 @@ const GlobalView = (() => {{
       surfaceContoursMesh.visible = false;
     }} else {{
       if (mode === 'height') colorAttr.array.set(heightColors);
-      else if (mode === 'sunexp') colorAttr.array.set(sunExpColors);
-      else if (mode === 'radio') colorAttr.array.set(radioExpColors);
+      else if (mode === 'sunexp' && sunExpColors) colorAttr.array.set(sunExpColors);
+      else if (mode === 'radio' && radioExpColors) colorAttr.array.set(radioExpColors);
       colorAttr.needsUpdate = true;
 
       terrainMesh.material = dataMapMaterial;
@@ -2221,28 +2215,31 @@ const GlobalView = (() => {{
 
 
 // ==============================================================================
-// VIEW 2: 200x200 KM SQUARE 3D TERRAIN VIEW (1 UNIT = 1 KM, TRUE CURVATURE)
+// VIEW 2: MAX-DETAIL 512px TILE VIEW (+25 KM SHADOW BUFFER)
 // ==============================================================================
 const TileDetailView = (() => {{
   const group = new THREE.Group();
   group.visible = false;
   scene.add(group);
 
-  const RES = DATA.tile_grid_res;
-  const SIZE_KM = DATA.tile_size_km;
-  const HALF_KM = SIZE_KM * 0.5;
+  const RES = DATA.tile_grid_res;                  // 512 (Max Detail)
+  const VIS_SIZE_KM = DATA.tile_size_km;          // 200 km visible square
+  const VIS_HALF_KM = VIS_SIZE_KM * 0.5;          // 100 km visible half-width
+  const PAD_KM = DATA.shadow_pad_km;              // 25 km shadow margin per side
+  const FULL_SIZE_KM = VIS_SIZE_KM + 2.0 * PAD_KM;// 250 km total shadow caster
+  const FULL_HALF_KM = FULL_SIZE_KM * 0.5;        // 125 km total mesh half-width
   const NUM_VERTS = RES * RES;
 
   const Z_KM = new Float32Array(NUM_VERTS);
-  const SUN_EXP_ARR = new Float32Array(NUM_VERTS);
-  const RADIO_EXP_ARR = new Float32Array(NUM_VERTS);
+  const SUN_EXP_ARR = HAS_EXPOSURE_MAPS ? new Float32Array(NUM_VERTS) : null;
+  const RADIO_EXP_ARR = HAS_EXPOSURE_MAPS ? new Float32Array(NUM_VERTS) : null;
   const LATS_ARR = new Float32Array(NUM_VERTS);
   const LONS_ARR = new Float32Array(NUM_VERTS);
 
   const positions = new Float32Array(NUM_VERTS * 3);
   const heightColors = new Float32Array(NUM_VERTS * 3);
-  const sunExpColors = new Float32Array(NUM_VERTS * 3);
-  const radioExpColors = new Float32Array(NUM_VERTS * 3);
+  const sunExpColors = HAS_EXPOSURE_MAPS ? new Float32Array(NUM_VERTS * 3) : null;
+  const radioExpColors = HAS_EXPOSURE_MAPS ? new Float32Array(NUM_VERTS * 3) : null;
 
   const indices = new Uint32Array((RES - 1) * (RES - 1) * 6);
   let iPtr = 0;
@@ -2263,10 +2260,19 @@ const TileDetailView = (() => {{
   geometry.setAttribute('color', colorAttr);
   geometry.setIndex(new THREE.BufferAttribute(indices, 1));
 
+  const tileClipPlanes = [
+    new THREE.Plane(new THREE.Vector3( 1, 0,  0), VIS_HALF_KM),
+    new THREE.Plane(new THREE.Vector3(-1, 0,  0), VIS_HALF_KM),
+    new THREE.Plane(new THREE.Vector3( 0, 0,  1), VIS_HALF_KM),
+    new THREE.Plane(new THREE.Vector3( 0, 0, -1), VIS_HALF_KM),
+  ];
+
   const shadowMaterial = new THREE.MeshStandardMaterial({{
     color: 0xc2c6cc,
     roughness: 0.95,
-    metalness: 0.0
+    metalness: 0.0,
+    clippingPlanes: tileClipPlanes,
+    clipShadows: false
   }});
 
   const dataMapMaterial = new THREE.MeshStandardMaterial({{
@@ -2275,7 +2281,9 @@ const TileDetailView = (() => {{
     metalness: 0.0,
     polygonOffset: true,
     polygonOffsetFactor: 1,
-    polygonOffsetUnits: 1
+    polygonOffsetUnits: 1,
+    clippingPlanes: tileClipPlanes,
+    clipShadows: false
   }});
 
   const terrainMesh = new THREE.Mesh(geometry, shadowMaterial);
@@ -2293,19 +2301,22 @@ const TileDetailView = (() => {{
   const defaultCamPos = new THREE.Vector3(165, 130, 195);
   const approachCamPos = new THREE.Vector3(240, 250, 280);
 
-  // Tile-local ephemeris (projected into tile's local ENU frame: +X=East, +Y=Up, -Z=North)
   const tileSunDirs = new Float32Array(TOTAL_STEPS * 3);
   const tileEarthDirs = new Float32Array(TOTAL_STEPS * 3);
   const horizonProfile = new Float32Array(360);
   const hourlySunLit = new Uint8Array(TOTAL_STEPS);
   let statsSummary = {{ sunPct: '0%', radioPct: '0%', maxEclipse: '0 h' }};
 
-  // Surface contours
   let showSurfaceContours = true;
   let currentContourInterval = 250;
   const surfaceContoursMesh = new THREE.LineSegments(
     new THREE.BufferGeometry(),
-    new THREE.LineBasicMaterial({{ vertexColors: true, transparent: true, opacity: 0.78 }})
+    new THREE.LineBasicMaterial({{
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.78,
+      clippingPlanes: tileClipPlanes
+    }})
   );
   surfaceContoursMesh.visible = false;
   group.add(surfaceContoursMesh);
@@ -2395,30 +2406,28 @@ const TileDetailView = (() => {{
     }}
 
     const newGeo = new THREE.BufferGeometry();
-    newGeo.setAttribute('position', new THREE.Float32BufferAttribute(segPositions, 3));
-    newGeo.setAttribute('color', new THREE.Float32BufferAttribute(segColors, 3));
+    newGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(segPositions), 3));
+    newGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(segColors), 3));
     surfaceContoursMesh.geometry.dispose();
     surfaceContoursMesh.geometry = newGeo;
     return levels.length;
   }}
 
-  // Metric 200x200 km 3D bounding grid & labels
   const scaleGroup = new THREE.Group();
   group.add(scaleGroup);
 
   const baseY = -12.0;
-  const topY = 12.0;
   const kmTicks = [-100, -50, 0, 50, 100];
 
   const floorLinePos = [
-    -HALF_KM, baseY, -HALF_KM,  HALF_KM, baseY, -HALF_KM,
-     HALF_KM, baseY, -HALF_KM,  HALF_KM, baseY,  HALF_KM,
-     HALF_KM, baseY,  HALF_KM, -HALF_KM, baseY,  HALF_KM,
-    -HALF_KM, baseY,  HALF_KM, -HALF_KM, baseY, -HALF_KM,
+    -VIS_HALF_KM, baseY, -VIS_HALF_KM,  VIS_HALF_KM, baseY, -VIS_HALF_KM,
+     VIS_HALF_KM, baseY, -VIS_HALF_KM,  VIS_HALF_KM, baseY,  VIS_HALF_KM,
+     VIS_HALF_KM, baseY,  VIS_HALF_KM, -VIS_HALF_KM, baseY,  VIS_HALF_KM,
+    -VIS_HALF_KM, baseY,  VIS_HALF_KM, -VIS_HALF_KM, baseY, -VIS_HALF_KM,
   ];
   kmTicks.forEach((v) => {{
-    floorLinePos.push(v, baseY, -HALF_KM, v, baseY, HALF_KM);
-    floorLinePos.push(-HALF_KM, baseY, v, HALF_KM, baseY, v);
+    floorLinePos.push(v, baseY, -VIS_HALF_KM, v, baseY, VIS_HALF_KM);
+    floorLinePos.push(-VIS_HALF_KM, baseY, v, VIS_HALF_KM, baseY, v);
   }});
   const floorGeo = new THREE.BufferGeometry();
   floorGeo.setAttribute('position', new THREE.Float32BufferAttribute(floorLinePos, 3));
@@ -2458,14 +2467,13 @@ const TileDetailView = (() => {{
   function updateScaleOrientation() {{
     const signX = camera.position.x >= 0 ? 1 : -1;
     const signZ = camera.position.z >= 0 ? 1 : -1;
-    xTickSprites.forEach(({{ sp, wx }}) => sp.position.set(wx, baseY - 2.2, signZ * (HALF_KM + 12)));
-    xAxisTitle.position.set(0, baseY - 4.5, signZ * (HALF_KM + 26));
-    zTickSprites.forEach(({{ sp, wz }}) => sp.position.set(signX * (HALF_KM + 12), baseY - 2.2, wz));
-    zAxisTitle.position.set(signX * (HALF_KM + 26), baseY - 4.5, 0);
+    xTickSprites.forEach(({{ sp, wx }}) => sp.position.set(wx, baseY - 2.2, signZ * (VIS_HALF_KM + 12)));
+    xAxisTitle.position.set(0, baseY - 4.5, signZ * (VIS_HALF_KM + 26));
+    zTickSprites.forEach(({{ sp, wz }}) => sp.position.set(signX * (VIS_HALF_KM + 12), baseY - 2.2, wz));
+    zAxisTitle.position.set(signX * (VIS_HALF_KM + 26), baseY - 4.5, 0);
   }}
   updateScaleOrientation();
 
-  // Hover crosshair
   const crosshairGroup = new THREE.Group();
   crosshairGroup.visible = false;
   group.add(crosshairGroup);
@@ -2485,8 +2493,8 @@ const TileDetailView = (() => {{
   crosshairGroup.add(new THREE.Line(lineXGeo, crossMat), new THREE.Line(lineZGeo, crossMat), centerRing);
 
   function getWorldHeightAt(wx, wz) {{
-    const cF = THREE.MathUtils.clamp(((wx + HALF_KM) / SIZE_KM) * (RES - 1), 0, RES - 1);
-    const rF = THREE.MathUtils.clamp(((wz + HALF_KM) / SIZE_KM) * (RES - 1), 0, RES - 1);
+    const cF = THREE.MathUtils.clamp(((wx + FULL_HALF_KM) / FULL_SIZE_KM) * (RES - 1), 0, RES - 1);
+    const rF = THREE.MathUtils.clamp(((wz + FULL_HALF_KM) / FULL_SIZE_KM) * (RES - 1), 0, RES - 1);
     const c0 = cF | 0, c1 = Math.min(RES - 1, c0 + 1);
     const r0 = rF | 0, r1 = Math.min(RES - 1, r0 + 1);
     const fc = cF - c0, fr = rF - r0;
@@ -2497,12 +2505,12 @@ const TileDetailView = (() => {{
     return (h00 * (1 - fc) + h10 * fc) * (1 - fr) + (h01 * (1 - fc) + h11 * fc) * fr;
   }}
 
-  const normalEps = (SIZE_KM / (RES - 1)) * 0.5;
+  const normalEps = (FULL_SIZE_KM / (RES - 1)) * 0.5;
   function getSmoothNormalAt(wx, wz, targetVec) {{
-    const hL = getWorldHeightAt(Math.max(-HALF_KM, wx - normalEps), wz);
-    const hR = getWorldHeightAt(Math.min(HALF_KM, wx + normalEps), wz);
-    const hD = getWorldHeightAt(wx, Math.max(-HALF_KM, wz - normalEps));
-    const hU = getWorldHeightAt(wx, Math.min(HALF_KM, wz + normalEps));
+    const hL = getWorldHeightAt(Math.max(-FULL_HALF_KM, wx - normalEps), wz);
+    const hR = getWorldHeightAt(Math.min(FULL_HALF_KM, wx + normalEps), wz);
+    const hD = getWorldHeightAt(wx, Math.max(-FULL_HALF_KM, wz - normalEps));
+    const hU = getWorldHeightAt(wx, Math.min(FULL_HALF_KM, wz + normalEps));
     return targetVec.set(-(hR - hL), 2.0 * normalEps, -(hU - hD)).normalize();
   }}
 
@@ -2513,9 +2521,9 @@ const TileDetailView = (() => {{
     const lift = 0.22;
     for (let i = 0; i <= armSegments; i++) {{
       const offset = -armHalfLen + (i / armSegments) * (armHalfLen * 2);
-      const sx = THREE.MathUtils.clamp(wx + offset, -HALF_KM, HALF_KM);
+      const sx = THREE.MathUtils.clamp(wx + offset, -VIS_HALF_KM, VIS_HALF_KM);
       posX[i * 3] = sx; posX[i * 3 + 1] = getWorldHeightAt(sx, wz) + lift; posX[i * 3 + 2] = wz;
-      const sz = THREE.MathUtils.clamp(wz + offset, -HALF_KM, HALF_KM);
+      const sz = THREE.MathUtils.clamp(wz + offset, -VIS_HALF_KM, VIS_HALF_KM);
       posZ[i * 3] = wx; posZ[i * 3 + 1] = getWorldHeightAt(wx, sz) + lift; posZ[i * 3 + 2] = sz;
     }}
     lineXGeo.attributes.position.needsUpdate = true;
@@ -2525,7 +2533,6 @@ const TileDetailView = (() => {{
     crosshairGroup.visible = true;
   }}
 
-  // Sun & Earth lights + sky markers for the 200x200 km square
   const sunLight = new THREE.DirectionalLight(0xfff8e7, 3.2);
   sunLight.castShadow = false;
   sunLight.shadow.mapSize.width = 4096;
@@ -2536,14 +2543,14 @@ const TileDetailView = (() => {{
   group.add(sunLight.target);
 
   const _aabbCorners = [
-    new THREE.Vector3(-HALF_KM, -15, -HALF_KM),
-    new THREE.Vector3( HALF_KM, -15, -HALF_KM),
-    new THREE.Vector3(-HALF_KM,  15, -HALF_KM),
-    new THREE.Vector3( HALF_KM,  15, -HALF_KM),
-    new THREE.Vector3(-HALF_KM, -15,  HALF_KM),
-    new THREE.Vector3( HALF_KM, -15,  HALF_KM),
-    new THREE.Vector3(-HALF_KM,  15,  HALF_KM),
-    new THREE.Vector3( HALF_KM,  15,  HALF_KM),
+    new THREE.Vector3(-FULL_HALF_KM, -15, -FULL_HALF_KM),
+    new THREE.Vector3( FULL_HALF_KM, -15, -FULL_HALF_KM),
+    new THREE.Vector3(-FULL_HALF_KM,  15, -FULL_HALF_KM),
+    new THREE.Vector3( FULL_HALF_KM,  15, -FULL_HALF_KM),
+    new THREE.Vector3(-FULL_HALF_KM, -15,  FULL_HALF_KM),
+    new THREE.Vector3( FULL_HALF_KM, -15,  FULL_HALF_KM),
+    new THREE.Vector3(-FULL_HALF_KM,  15,  FULL_HALF_KM),
+    new THREE.Vector3( FULL_HALF_KM,  15,  FULL_HALF_KM),
   ];
   const _cornerTmp = new THREE.Vector3();
 
@@ -2659,24 +2666,27 @@ const TileDetailView = (() => {{
     let localMaxZ = -Infinity;
 
     for (let r = 0; r < RES; r++) {{
-      const yKm = HALF_KM - (r / (RES - 1)) * SIZE_KM;
+      const yKm = FULL_HALF_KM - (r / (RES - 1)) * FULL_SIZE_KM;
       for (let c = 0; c < RES; c++) {{
-        const xKm = -HALF_KM + (c / (RES - 1)) * SIZE_KM;
+        const xKm = -FULL_HALF_KM + (c / (RES - 1)) * FULL_SIZE_KM;
         const idx = r * RES + c;
         const u = tileKmToMoonUnit(basis, xKm, yKm);
         const {{ latDeg, lonDeg }} = moonUnitToLatLon(u);
         const zM = getElevationMetersAtLatLon(latDeg, lonDeg);
-        const sunE = sampleGlobalGridAtLatLon(G_SUN_EXP_VALUES, latDeg, lonDeg);
-        const radE = sampleGlobalGridAtLatLon(G_RADIO_EXP_VALUES, latDeg, lonDeg);
 
         Z_KM[idx] = zM / 1000.0;
-        SUN_EXP_ARR[idx] = sunE;
-        RADIO_EXP_ARR[idx] = radE;
         LATS_ARR[idx] = latDeg;
         LONS_ARR[idx] = lonDeg;
 
-        if (zM < localMinZ) localMinZ = zM;
-        if (zM > localMaxZ) localMaxZ = zM;
+        if (HAS_EXPOSURE_MAPS) {{
+          SUN_EXP_ARR[idx] = sampleGlobalGridAtLatLon(G_SUN_EXP_VALUES, latDeg, lonDeg);
+          RADIO_EXP_ARR[idx] = sampleGlobalGridAtLatLon(G_RADIO_EXP_VALUES, latDeg, lonDeg);
+        }}
+
+        if (Math.abs(xKm) <= VIS_HALF_KM && Math.abs(yKm) <= VIS_HALF_KM) {{
+          if (zM < localMinZ) localMinZ = zM;
+          if (zM > localMaxZ) localMaxZ = zM;
+        }}
 
         const rKm = R_MOON_KM + (zM * DATA.exaggeration) / 1000.0;
         const dx = u.x * rKm - p0Moon.x;
@@ -2707,11 +2717,13 @@ const TileDetailView = (() => {{
       const hc = sampleStops((Z_KM[i] * 1000.0 - tileMinZ) / zSpan, VIRIDIS_STOPS);
       heightColors[i * 3] = hc[0]; heightColors[i * 3 + 1] = hc[1]; heightColors[i * 3 + 2] = hc[2];
 
-      const sc = sampleStops(SUN_EXP_ARR[i], SUN_EXP_STOPS);
-      sunExpColors[i * 3] = sc[0]; sunExpColors[i * 3 + 1] = sc[1]; sunExpColors[i * 3 + 2] = sc[2];
+      if (HAS_EXPOSURE_MAPS) {{
+        const sc = sampleStops(SUN_EXP_ARR[i], SUN_EXP_STOPS);
+        sunExpColors[i * 3] = sc[0]; sunExpColors[i * 3 + 1] = sc[1]; sunExpColors[i * 3 + 2] = sc[2];
 
-      const rc = sampleStops(RADIO_EXP_ARR[i], RADIO_EXP_STOPS);
-      radioExpColors[i * 3] = rc[0]; radioExpColors[i * 3 + 1] = rc[1]; radioExpColors[i * 3 + 2] = rc[2];
+        const rc = sampleStops(RADIO_EXP_ARR[i], RADIO_EXP_STOPS);
+        radioExpColors[i * 3] = rc[0]; radioExpColors[i * 3 + 1] = rc[1]; radioExpColors[i * 3 + 2] = rc[2];
+      }}
     }}
 
     geometry.attributes.position.needsUpdate = true;
@@ -2722,14 +2734,12 @@ const TileDetailView = (() => {{
     sunBeamArr[3] = 0; sunBeamArr[4] = centerWorldY + 0.1; sunBeamArr[5] = 0;
     earthBeamArr[3] = 0; earthBeamArr[4] = centerWorldY + 0.1; earthBeamArr[5] = 0;
 
-    // Project 8,760 hourly Sun & Earth vectors into this tile's local ENU frame
     const annualArr = annualSunGeo.attributes.position.array;
     const earthArr = earthTrailGeo.attributes.position.array;
     let aPtr = 0, ePtr = 0;
 
     for (let i = 0; i < TOTAL_STEPS; i++) {{
       const b = i * 3;
-      // Convert Three.js global vector -> Moon-fixed vector
       const sxM = SUN_DIRS[b], syM = -SUN_DIRS[b + 2], szM = SUN_DIRS[b + 1];
       const sEast = sxM * basis.east.x + syM * basis.east.y + szM * basis.east.z;
       const sNorth = sxM * basis.north.x + syM * basis.north.y + szM * basis.north.z;
@@ -2745,7 +2755,7 @@ const TileDetailView = (() => {{
       const exM = EARTH_DIRS[b], eyM = -EARTH_DIRS[b + 2], ezM = EARTH_DIRS[b + 1];
       const eEast = exM * basis.east.x + eyM * basis.east.y + ezM * basis.east.z;
       const eNorth = exM * basis.north.x + eyM * basis.north.y + ezM * basis.north.z;
-      const eUp = exM * basis.up.x + eyM * basis.up.y + ezM * basis.up.z;
+      const eUp = exM * basis.up.x + eyM * basis.up.y + szM * basis.up.z;
 
       tileEarthDirs[b] = eEast;
       tileEarthDirs[b + 1] = eUp;
@@ -2768,9 +2778,8 @@ const TileDetailView = (() => {{
     annualSunGeo.attributes.position.needsUpdate = true;
     earthTrailGeo.attributes.position.needsUpdate = true;
 
-    // 360° horizon profile at the center of this 200x200 km square
-    const stepDist = 1.25;
-    const maxSteps = Math.floor(HALF_KM / stepDist);
+    const stepDist = 0.5;
+    const maxSteps = Math.floor(FULL_HALF_KM / stepDist);
     for (let deg = 0; deg < 360; deg++) {{
       const azRad = THREE.MathUtils.degToRad(deg);
       const dx = Math.sin(azRad);
@@ -2780,7 +2789,7 @@ const TileDetailView = (() => {{
         const d = s * stepDist;
         const wx = dx * d;
         const wz = dz * d;
-        if (Math.abs(wx) > HALF_KM || Math.abs(wz) > HALF_KM) break;
+        if (Math.abs(wx) > FULL_HALF_KM || Math.abs(wz) > FULL_HALF_KM) break;
         const wy = getWorldHeightAt(wx, wz);
         const ang = THREE.MathUtils.radToDeg(Math.atan2(wy - centerWorldY, d));
         if (ang > maxAng) maxAng = ang;
@@ -2847,12 +2856,12 @@ const TileDetailView = (() => {{
     return visibleSamples / 7;
   }}
 
-  const gridMarchStep = (SIZE_KM / (RES - 1)) * 0.55;
+  const gridMarchStep = (FULL_SIZE_KM / (RES - 1)) * 0.45;
   function isTerrainOccluded(ox, oy, oz, dx, dy, dz, maxDist) {{
     for (let t = gridMarchStep; t < maxDist; t += gridMarchStep) {{
       const px = ox + dx * t;
       const pz = oz + dz * t;
-      if (px < -HALF_KM || px > HALF_KM || pz < -HALF_KM || pz > HALF_KM) return false;
+      if (px < -FULL_HALF_KM || px > FULL_HALF_KM || pz < -FULL_HALF_KM || pz > FULL_HALF_KM) return false;
       const py = oy + dy * t;
       if (dy >= 0 && py > maxWorldY) return false;
       if (py <= getWorldHeightAt(px, pz)) return true;
@@ -2872,8 +2881,8 @@ const TileDetailView = (() => {{
     let tMax = 5000.0;
 
     const invX = 1.0 / _rayDir.x;
-    const tx1 = (-HALF_KM - _rayOrigin.x) * invX;
-    const tx2 = (HALF_KM - _rayOrigin.x) * invX;
+    const tx1 = (-VIS_HALF_KM - _rayOrigin.x) * invX;
+    const tx2 = (VIS_HALF_KM - _rayOrigin.x) * invX;
     tMin = Math.max(tMin, Math.min(tx1, tx2));
     tMax = Math.min(tMax, Math.max(tx1, tx2));
 
@@ -2884,8 +2893,8 @@ const TileDetailView = (() => {{
     tMax = Math.min(tMax, Math.max(ty1, ty2));
 
     const invZ = 1.0 / _rayDir.z;
-    const tz1 = (-HALF_KM - _rayOrigin.z) * invZ;
-    const tz2 = (HALF_KM - _rayOrigin.z) * invZ;
+    const tz1 = (-VIS_HALF_KM - _rayOrigin.z) * invZ;
+    const tz2 = (VIS_HALF_KM - _rayOrigin.z) * invZ;
     tMin = Math.max(tMin, Math.min(tz1, tz2));
     tMax = Math.min(tMax, Math.max(tz1, tz2));
 
@@ -2896,7 +2905,7 @@ const TileDetailView = (() => {{
       const px = _rayOrigin.x + _rayDir.x * t;
       const py = _rayOrigin.y + _rayDir.y * t;
       const pz = _rayOrigin.z + _rayDir.z * t;
-      if (px >= -HALF_KM && px <= HALF_KM && pz >= -HALF_KM && pz <= HALF_KM) {{
+      if (px >= -VIS_HALF_KM && px <= VIS_HALF_KM && pz >= -VIS_HALF_KM && pz <= VIS_HALF_KM) {{
         const h = getWorldHeightAt(px, pz);
         if (py <= h) {{
           let lo = prevT, hi = t;
@@ -2906,8 +2915,8 @@ const TileDetailView = (() => {{
             else lo = mid;
           }}
           const hitT = (lo + hi) * 0.5;
-          const hx = THREE.MathUtils.clamp(_rayOrigin.x + _rayDir.x * hitT, -HALF_KM, HALF_KM);
-          const hz = THREE.MathUtils.clamp(_rayOrigin.z + _rayDir.z * hitT, -HALF_KM, HALF_KM);
+          const hx = THREE.MathUtils.clamp(_rayOrigin.x + _rayDir.x * hitT, -VIS_HALF_KM, VIS_HALF_KM);
+          const hz = THREE.MathUtils.clamp(_rayOrigin.z + _rayDir.z * hitT, -VIS_HALF_KM, VIS_HALF_KM);
           const hy = getWorldHeightAt(hx, hz);
           outPoint.set(hx, hy, hz);
           getSmoothNormalAt(hx, hz, outNormal);
@@ -2923,6 +2932,9 @@ const TileDetailView = (() => {{
   let currentTwilightFactor = 1.0;
 
   function setMapMode(mode) {{
+    if (!HAS_EXPOSURE_MAPS && (mode === 'sunexp' || mode === 'radio')) {{
+      mode = 'shadow';
+    }}
     mapMode = mode;
     if (mode === 'shadow') {{
       terrainMesh.material = shadowMaterial;
@@ -2942,8 +2954,8 @@ const TileDetailView = (() => {{
       surfaceContoursMesh.visible = false;
     }} else {{
       if (mode === 'height') colorAttr.array.set(heightColors);
-      else if (mode === 'sunexp') colorAttr.array.set(sunExpColors);
-      else if (mode === 'radio') colorAttr.array.set(radioExpColors);
+      else if (mode === 'sunexp' && sunExpColors) colorAttr.array.set(sunExpColors);
+      else if (mode === 'radio' && radioExpColors) colorAttr.array.set(radioExpColors);
       colorAttr.needsUpdate = true;
 
       terrainMesh.material = dataMapMaterial;
@@ -2977,7 +2989,7 @@ const TileDetailView = (() => {{
     const eEl = THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(tileEarthDirs[baseIdx + 1], -1, 1)));
 
     sunMarker.position.set(sx, sy, sz);
-    sunLight.position.set(sx * 1.4, sy * 1.4, sz * 1.4);
+    sunLight.position.set(sx * 1.6, sy * 1.6, sz * 1.6);
 
     currentTwilightFactor = THREE.MathUtils.smoothstep(sEl, -2.5, 1.5);
     if (mapMode === 'shadow' && group.visible) {{
@@ -3045,7 +3057,7 @@ const TileDetailView = (() => {{
       const ox = worldPt.x + smoothNormal.x * 0.25;
       const oy = worldPt.y + smoothNormal.y * 0.25;
       const oz = worldPt.z + smoothNormal.z * 0.25;
-      const maxRayDist = SIZE_KM * 1.45;
+      const maxRayDist = FULL_SIZE_KM * 1.45;
 
       for (let i = 0; i < 7; i++) {{
         _sampleDir.copy(_sunDir);
@@ -3071,7 +3083,7 @@ const TileDetailView = (() => {{
     const fluxWm2 = Math.round(SOLAR_CONSTANT_WM2 * effectiveIllum);
 
     let statusHtml;
-    if (_sunDir.y <= -SOLAR_ANGULAR_RADIUS_RAD) statusHtml = '<span class="tt-shadow">🌑 Below Horizon (Lunar Night)</span>';
+    if (_sunDir.y <= -SOLAR_ANGULAR_RADIUS_DEG) statusHtml = '<span class="tt-shadow">🌑 Below Horizon (Lunar Night)</span>';
     else if (cosIncidence <= 0) statusHtml = '<span class="tt-shadow">🌑 Shadowed (Slope Faces Away)</span>';
     else if (diskPct === 0) statusHtml = '<span class="tt-shadow">🌑 Umbra Shadow (Blocked by Terrain)</span>';
     else if (diskPct < 100) statusHtml = `<span class="tt-partial">🌗 Penumbra (${{diskPct}}% Sun Disk)</span>`;
@@ -3081,8 +3093,8 @@ const TileDetailView = (() => {{
   }}
 
   function getPointCoords(worldPt) {{
-    const cIdx = THREE.MathUtils.clamp(Math.round(((worldPt.x + HALF_KM) / SIZE_KM) * (RES - 1)), 0, RES - 1);
-    const rIdx = THREE.MathUtils.clamp(Math.round(((worldPt.z + HALF_KM) / SIZE_KM) * (RES - 1)), 0, RES - 1);
+    const cIdx = THREE.MathUtils.clamp(Math.round(((worldPt.x + FULL_HALF_KM) / FULL_SIZE_KM) * (RES - 1)), 0, RES - 1);
+    const rIdx = THREE.MathUtils.clamp(Math.round(((worldPt.z + FULL_HALF_KM) / FULL_SIZE_KM) * (RES - 1)), 0, RES - 1);
     const idx = rIdx * RES + cIdx;
     return {{
       xKm: worldPt.x,
@@ -3090,14 +3102,14 @@ const TileDetailView = (() => {{
       elevM: Z_KM[idx] * 1000.0,
       lat: LATS_ARR[idx],
       lon: LONS_ARR[idx],
-      sunExp: SUN_EXP_ARR[idx],
-      radioExp: RADIO_EXP_ARR[idx]
+      sunExp: HAS_EXPOSURE_MAPS ? SUN_EXP_ARR[idx] : 0,
+      radioExp: HAS_EXPOSURE_MAPS ? RADIO_EXP_ARR[idx] : 0
     }};
   }}
 
   return {{
     group,
-    SIZE_KM,
+    SIZE_KM: VIS_SIZE_KM,
     defaultCamPos,
     approachCamPos,
     loadTile,
@@ -3124,9 +3136,9 @@ const TileDetailView = (() => {{
 
 
 // ==============================================================================
-// UNIFIED APPLICATION CONTROLLER, HUD SYNC & SMOOTH VIEW TRANSITIONS
+// APP CONTROLLER & TRANSITIONS
 // ==============================================================================
-let viewScope = 'global'; // 'global' | 'tile'
+let viewScope = 'global';
 let currentStepFloat = 0;
 let isPlaying = false;
 let playbackHoursPerSec = 24;
@@ -3134,7 +3146,7 @@ let lastMouseClient = null;
 
 const transition = {{
   active: false,
-  direction: 'toTile', // 'toTile' | 'toGlobal'
+  direction: 'toTile',
   elapsed: 0,
   duration: 1.35,
   midpointSwitched: false,
@@ -3150,7 +3162,6 @@ const transition = {{
 const transitionVeil = document.getElementById('transition-veil');
 const transitionLabel = document.getElementById('transition-label');
 
-// Initial camera framing showing the Moon & South Pole
 const initGlobalCamDir = GlobalView.latLonToWorldVec(-48.0, 20.0, 1.0);
 camera.position.copy(initGlobalCamDir).multiplyScalar(GlobalView.R_MOON_W * 2.95);
 controls.target.set(0, 0, 0);
@@ -3196,7 +3207,7 @@ const cbTicksContainer = document.getElementById('colorbar-ticks');
 
 function updateLegend(scope, mode) {{
   cbTicksContainer.innerHTML = '';
-  if (mode === 'sunexp') {{
+  if (mode === 'sunexp' && HAS_EXPOSURE_MAPS) {{
     legendTitleEl.textContent = 'Avg Sunlight';
     legendColorbarEl.style.background = 'linear-gradient(to top, #090b18, #421157, #ad263d, #f17317, #fed12e, #fffbd6)';
     [0, 20, 40, 60, 80, 100].forEach((pct) => {{
@@ -3206,7 +3217,7 @@ function updateLegend(scope, mode) {{
       el.textContent = `${{pct}}%`;
       cbTicksContainer.appendChild(el);
     }});
-  }} else if (mode === 'radio') {{
+  }} else if (mode === 'radio' && HAS_EXPOSURE_MAPS) {{
     legendTitleEl.textContent = 'Radio (DTE)';
     legendColorbarEl.style.background = 'linear-gradient(to top, #0a0d18, #3d1f7a, #1c70a3, #14c2bd, #7af7eb)';
     [0, 25, 50, 75, 100].forEach((pct) => {{
@@ -3244,12 +3255,12 @@ function syncHUDForScope() {{
     if (btn.dataset.mode === activeMode) btn.classList.add('active', `${{activeMode}}-mode`);
   }});
 
-  if (activeMode === 'sunexp') {{
+  if (activeMode === 'sunexp' && HAS_EXPOSURE_MAPS) {{
     modeBannerEl.style.display = 'block';
-    modeBannerEl.innerHTML = '<b>2027 Annual Solar Exposure (0–100%):</b><br/>0% = Permanently Shadowed Regions (PSRs) &bull; &gt;85% = Peaks of Eternal Light.';
-  }} else if (activeMode === 'radio') {{
+    modeBannerEl.innerHTML = '<b>2027 Annual Solar Exposure (0–100%):</b><br/>0% = PSRs &bull; &gt;85% = Peaks of Eternal Light.';
+  }} else if (activeMode === 'radio' && HAS_EXPOSURE_MAPS) {{
     modeBannerEl.style.display = 'block';
-    modeBannerEl.innerHTML = '<b>2027 Direct-to-Earth (DTE) Radio Exposure:</b><br/>100% = Continuous Earth LOS &bull; 0% = Radio-Quiet Far Side.';
+    modeBannerEl.innerHTML = '<b>2027 Direct-to-Earth (DTE) Radio Exposure:</b><br/>100% = Continuous Earth LOS &bull; 0% = Far Side.';
   }} else {{
     modeBannerEl.style.display = 'none';
   }}
@@ -3263,7 +3274,7 @@ function syncHUDForScope() {{
     tileGridToggleRow.style.display = 'flex';
     graticuleToggleRow.style.display = 'flex';
     hudTitleEl.textContent = 'Global LOLA + JPL Horizons 3D';
-    hudSubtitleEl.textContent = '1:1 Metric Lunar Sphere • 1,176 × (200×200 km)';
+    hudSubtitleEl.textContent = `1:1 Metric Lunar Sphere • ${{LUNAR_TILES.length.toLocaleString()}} × (200×200 km, 512px)`;
 
     const showC = GlobalView.getShowContours();
     contourSwitchPill.classList.toggle('on', showC);
@@ -3288,7 +3299,7 @@ function syncHUDForScope() {{
     `;
     statMidLblEl.innerHTML = 'Annual<br/>Radio (DTE)';
     statMidValEl.style.color = '#00f5d4';
-    siteHintEl.innerHTML = 'Klicke auf ein beliebiges <b>200×200 km Quadrat</b> auf dem Mond, um dessen 3D-Terrain mit JPL-Schattenwurf zu öffnen.';
+    siteHintEl.innerHTML = 'Klicke auf ein beliebiges Quadrat, um das hochauflösende 512px-Terrain in 3D zu öffnen.';
 
     drawPowerStrip(GlobalView.hourlySunLit);
     updateLegend('global', activeMode);
@@ -3301,8 +3312,8 @@ function syncHUDForScope() {{
     const tile = TileDetailView.getTile();
     const latDir = tile.lat >= 0 ? 'N' : 'S';
     const lonDir = tile.lon >= 0 ? 'E' : 'W';
-    hudTitleEl.textContent = `Quadrat ${{tile.idLabel}} — 200×200 km 3D`;
-    hudSubtitleEl.textContent = `Zentrum: ${{Math.abs(tile.lat).toFixed(2)}}° ${{latDir}}, ${{Math.abs(tile.lon).toFixed(2)}}° ${{lonDir}} • 1:1:1 Maßstab`;
+    hudTitleEl.textContent = `Quadrat ${{tile.idLabel}} — Max-Detail 3D`;
+    hudSubtitleEl.textContent = `Zentrum: ${{Math.abs(tile.lat).toFixed(2)}}° ${{latDir}}, ${{Math.abs(tile.lon).toFixed(2)}}° ${{lonDir}} • 512×512 Grid`;
 
     const showC = TileDetailView.getShowContours();
     contourSwitchPill.classList.toggle('on', showC);
@@ -3324,7 +3335,7 @@ function syncHUDForScope() {{
     `;
     statMidLblEl.innerHTML = 'Annual<br/>Radio (DTE)';
     statMidValEl.style.color = '#00f5d4';
-    siteHintEl.innerHTML = 'Bewege den Mauszeiger über das 200×200 km Terrain für lokale Neigung, Einfallswinkel und Solarstrahlung (W/m²).';
+    siteHintEl.innerHTML = 'Maximal detailgetreues 512px-Mesh mit 250×250 km Schatten-Puffer.';
 
     drawPowerStrip(TileDetailView.hourlySunLit);
     updateLegend('tile', activeMode);
@@ -3404,9 +3415,6 @@ function applyEphemerisStep(stepIdx) {{
   }}
 }}
 
-// ==============================================================================
-// SMOOTH TRANSITIONS BETWEEN GLOBAL MOON & ANY 200x200 KM SQUARE
-// ==============================================================================
 function easeInCubic(t) {{ return t * t * t; }}
 function easeOutCubic(t) {{ return 1 - Math.pow(1 - t, 3); }}
 
@@ -3481,7 +3489,7 @@ function startTransitionToTile(tileIdx) {{
     .addScaledVector(surfNorm, GlobalView.R_MOON_W * 0.22)
     .addScaledVector(tangent, GlobalView.R_MOON_W * 0.12);
 
-  transitionLabel.textContent = `Öffne Quadrat ${{tile.idLabel}} (${{Math.abs(tile.lat).toFixed(1)}}° ${{latDir}}, ${{Math.abs(tile.lon).toFixed(1)}}° ${{lonDir}})...`;
+  transitionLabel.textContent = `Öffne Max-Detail Quadrat ${{tile.idLabel}} (${{Math.abs(tile.lat).toFixed(1)}}° ${{latDir}}, ${{Math.abs(tile.lon).toFixed(1)}}° ${{lonDir}})...`;
   controls.enabled = false;
 }}
 
@@ -3578,13 +3586,9 @@ function updateTransition(dtSec) {{
   }}
 }}
 
-// Initialize Global View immediately on load (0 ms, no startup loading screen)
 syncHUDForScope();
 applyEphemerisStep(0);
 
-// ==============================================================================
-// UI EVENT LISTENERS
-// ==============================================================================
 enterTileBtn.addEventListener('click', () => startTransitionToTile(GlobalView.getSelectedTileIdx()));
 backToGlobalBtn.addEventListener('click', () => startTransitionToGlobal());
 
@@ -3596,6 +3600,7 @@ window.addEventListener('keydown', (e) => {{
 
 document.querySelectorAll('#map-mode-selector .mode-btn').forEach((btn) => {{
   btn.addEventListener('click', () => {{
+    if (btn.classList.contains('disabled')) return;
     if (viewScope === 'global') {{
       GlobalView.setMapMode(btn.dataset.mode);
     }} else {{
@@ -3667,9 +3672,6 @@ timeSlider.addEventListener('input', (e) => {{
   applyEphemerisStep(parseInt(e.target.value, 10));
 }});
 
-// ==============================================================================
-// HOVER TELEMETRY & CLICK HANDLING (1,176 x 200x200 KM SQUARES)
-// ==============================================================================
 const _hitPoint = new THREE.Vector3();
 const _hitNormal = new THREE.Vector3();
 const _hitInfo = {{ latDeg: 0, lonDeg: 0, elevM: 0, surfaceR: 0 }};
@@ -3711,14 +3713,14 @@ function updateHoverCrosshair(clientX, clientY) {{
           <b>Status:</b> ${{illum.statusHtml}}<br/>
           <b>Illumination:</b> ${{illum.illumPct.toFixed(1)}}% (${{illum.fluxWm2}} W/m²) • <b>Sun Disk:</b> ${{illum.diskPct}}%
         `;
-      }} else if (gMode === 'sunexp') {{
+      }} else if (gMode === 'sunexp' && HAS_EXPOSURE_MAPS) {{
         const sunPct = GlobalView.sampleSunExp(_hitInfo.latDeg, _hitInfo.lonDeg) * 100.0;
         const sunHrs = Math.round((sunPct / 100.0) * TOTAL_STEPS);
         html += `
           <hr class="tt-divider"/>
           <b>Avg Sunlight (2027):</b> <span class="tt-lit">${{sunPct.toFixed(1)}}%</span> (${{sunHrs.toLocaleString()}} h/yr)
         `;
-      }} else if (gMode === 'radio') {{
+      }} else if (gMode === 'radio' && HAS_EXPOSURE_MAPS) {{
         const radPct = GlobalView.sampleRadioExp(_hitInfo.latDeg, _hitInfo.lonDeg) * 100.0;
         const radHrs = Math.round((radPct / 100.0) * TOTAL_STEPS);
         html += `
@@ -3728,7 +3730,7 @@ function updateHoverCrosshair(clientX, clientY) {{
       }}
 
       if (tileIdx >= 0) {{
-        html += `<hr class="tt-divider"/><span class="tt-cta">🔍 Klicken für 200×200 km 3D-Ansicht</span>`;
+        html += `<hr class="tt-divider"/><span class="tt-cta">🔍 Klicken für Max-Detail 3D-Ansicht</span>`;
       }}
 
       tooltip.style.display = 'block';
@@ -3764,13 +3766,13 @@ function updateHoverCrosshair(clientX, clientY) {{
           <b>Illumination:</b> ${{illum.illumPct.toFixed(1)}}% (${{illum.fluxWm2}} W/m²)<br/>
           <b>Incidence:</b> ${{illum.incidenceDeg.toFixed(1)}}° | <b>Slope:</b> ${{illum.slopeDeg.toFixed(1)}}°
         `;
-      }} else if (tMode === 'sunexp') {{
+      }} else if (tMode === 'sunexp' && HAS_EXPOSURE_MAPS) {{
         const sunPct = pts.sunExp * 100.0;
         html += `
           <hr class="tt-divider"/>
           <b>Avg Sunlight (2027):</b> <span class="tt-lit">${{sunPct.toFixed(1)}}%</span>
         `;
-      }} else if (tMode === 'radio') {{
+      }} else if (tMode === 'radio' && HAS_EXPOSURE_MAPS) {{
         const radPct = pts.radioExp * 100.0;
         html += `
           <hr class="tt-divider"/>
@@ -3837,9 +3839,6 @@ window.addEventListener('resize', () => {{
   renderer.setSize(window.innerWidth, window.innerHeight);
 }}, {{ passive: true }});
 
-// ==============================================================================
-// MAIN RENDER LOOP
-// ==============================================================================
 let lastFrameTime = performance.now();
 const _lastCamPos = new THREE.Vector3(Infinity, Infinity, Infinity);
 
@@ -3877,5 +3876,5 @@ animate(performance.now());
 """
 
 Path(OUTPUT_HTML).write_text(html_template, encoding="utf-8")
-print(f"Global + 1,176 x (200x200 km) Tiles simulation saved to '{OUTPUT_HTML}'")
+print(f"Max-Detail Global + {total_tiles_count:,} x (200x200 km, 512px) Tiles saved to '{OUTPUT_HTML}'")
 webbrowser.open(Path(OUTPUT_HTML).resolve().as_uri())
