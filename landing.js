@@ -97,7 +97,7 @@ function radialTexture(stops) {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
 // Sun: procedural, no texture. Surface = animated granulation with limb darkening and a few
-// sunspots; corona = camera-facing quad with a soft falloff and slowly moving streamers.
+// sunspots; aura = camera-facing quad, see below.
 const NOISE = `
 float hash(vec3 p){ p = fract(p * .3183099 + .1); p *= 17.; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
 float noise(vec3 x){ vec3 i = floor(x), f = fract(x); f = f * f * (3. - 2. * f);
@@ -126,7 +126,10 @@ const sunSurface = new THREE.Mesh(new THREE.SphereGeometry(SUN_R, 96, 48), new T
       col = mix(vec3(1., .42, .10) * col.r * 1.2, col, smoothstep(0., .45, mu));
       gl_FragColor = vec4(col * 1.4, 1.);
     }` }));
-const CORONA_SIZE = SUN_R * 16;
+// Aura instead of a halo: no wide soft glow. A thin bright rim at the limb, a low layer of plasma
+// that streams outwards with uneven height, and a few prominences (loops) that rise, fade and
+// reappear somewhere else. Everything is driven by uTime, nothing is a texture.
+const CORONA_SIZE = SUN_R * 6;
 const corona = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({
   uniforms: { uTime: sunUniforms.uTime, uSize: { value: CORONA_SIZE }, uR0: { value: SUN_R / (CORONA_SIZE / 2) } },
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
@@ -135,17 +138,44 @@ const corona = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMat
       float s = length(modelMatrix[0].xyz) * uSize;                      // always faces the camera
       vec4 c = modelViewMatrix * vec4(0., 0., 0., 1.); c.xy += position.xy * s; gl_Position = projectionMatrix * c; }`,
   fragmentShader: `uniform float uTime; uniform float uR0; varying vec2 vUv;` + NOISE + `
+    // One prominence, simplified: a magnetic loop of fixed shape anchored on the limb. Plasma climbs
+    // slowly from one footpoint along the loop until it is filled, glows for a while, then cools and
+    // thins out in place. The loop itself never changes size; a cycle lasts roughly a minute.
+    float flare(vec2 dir, float h, float a, float seed, float t){
+      float cyc = t * (.012 + .008 * hash(vec3(seed, 1., 2.))) + seed * 3.7;
+      float k = floor(cyc), ph = fract(cyc);
+      float a0 = 6.2832 * hash(vec3(seed, k, 5.));
+      float s = atan(sin(a - a0), cos(a - a0));                          // signed angle from the anchor
+      float w = .08 + .08 * hash(vec3(k, seed, 9.));
+      float H = .16 + .26 * hash(vec3(seed, k, 3.));
+      vec2 e = vec2(s / w, h / H);
+      float ring = abs(length(e) - 1.);
+      float u = atan(e.y, e.x) / 3.1416;                                 // 0..1 from one footpoint to the other
+      if (hash(vec3(k, seed, 7.)) > .5) u = 1. - u;
+      float front = smoothstep(0., .45, ph) * 1.2;                       // how far the plasma has climbed
+      float filled = 1. - smoothstep(front - .18, front, u);
+      float fade = smoothstep(1., .62, ph);
+      float fil = .45 + 1.1 * fbm(vec3(u * 7. - t * .25, ring * 5., seed + k)); // plasma moving along the loop
+      return smoothstep(.2 * (.6 + .4 * fade), 0., ring) * filled * fade * fil;
+    }
     void main(){
-      float r = length(vUv), d = max(r - uR0, 0.), a = atan(vUv.y, vUv.x);
-      vec3 ring = vec3(cos(a), sin(a), 0.);
-      float rays = fbm(ring * 2.6 + vec3(0., 0., uTime * .03 + r * .6));
-      float fine = fbm(ring * 9. + vec3(0., 0., 3. - uTime * .05 + r * 2.));
-      float inner = exp(-d * 15.);                                       // bright rim right at the limb
-      float mid = exp(-d * 5.2) * (.55 + .9 * rays);
-      float outer = exp(-d * 2.1) * (.25 + .9 * rays * fine);
-      float i = (1.15 * inner + .55 * mid + .22 * outer) * smoothstep(1., .55, r);
-      vec3 col = mix(vec3(1., .50, .16), vec3(1., .93, .76), clamp(inner + .5 * mid, 0., 1.));
-      gl_FragColor = vec4(col * i, 1.);
+      vec2 p = vUv / uR0;                                                // limb at length 1
+      float rr = length(p), h = max(rr - 1., 0.), a = atan(p.y, p.x), t = uTime;
+      vec2 dir = p / max(rr, 1e-4);
+      float edge = fbm(vec3(dir * 2.4, t * .06));
+      float height = .35 + 1.0 * edge * edge;                            // aura is higher in some directions
+      float warp = fbm(vec3(dir * 4., h * 3. - t * .25));
+      float plasma = fbm(vec3(dir * 7. + warp, h * 9. - t * .6));        // streams outwards
+      float aura = exp(-h / height * 2.4) * (.25 + 1.5 * plasma * plasma * 2.);
+      float rim = exp(-h * 40.);
+      float fl = 0.;
+      for (int i = 0; i < 5; i++) fl += flare(dir, h, a, float(i) + 1., t);
+      float glow = exp(-h * 2.2) * (.6 + .5 * edge);                     // warm, close to the disc, uneven
+      float i = (.9 * rim + .95 * aura + 1.2 * fl) * smoothstep(.96, 1., rr) * smoothstep(1. / uR0, .8 / uR0, rr);
+      vec3 col = mix(vec3(1., .26, .04), vec3(1., .55, .11), smoothstep(.1, .7, i));
+      col = mix(col, vec3(1., .93, .62), smoothstep(.8, 1.8, i));
+      float mask = smoothstep(.96, 1., rr) * smoothstep(1. / uR0, .8 / uR0, rr);
+      gl_FragColor = vec4(col * i + vec3(1., .34, .07) * glow * .5 * mask, 1.);
     }` }));
 corona.frustumCulled = false;
 const sun = new THREE.Group();
@@ -174,8 +204,48 @@ new GLTFLoader().load('assets/sun.glb', gltf => {
       }` });
   const box = new THREE.Box3().setFromObject(gltf.scene), size = box.getSize(new THREE.Vector3());
   gltf.scene.scale.multiplyScalar(2 * SUN_R / Math.max(size.x, size.y, size.z));
-  sun.remove(sunSurface); sun.add(gltf.scene);
+  sun.remove(sunSurface); sun.add(gltf.scene); gltf.scene.visible = !sdoLive;
 });
+
+// Real Sun, if the file is there: a full-disc movie from NASA's Solar Dynamics Observatory (AIA 304 A,
+// 10 May 2024, a day with strong flares) on a camera-facing disc. SDO orbits the Earth, so this is
+// the Sun as seen from the Earth-Moon system. It replaces the modelled surface and aura above; without the
+// file (assets/sun-sdo.mp4) nothing changes. The footage is not synchronised with the simulated date.
+// Courtesy of NASA/SDO and the AIA, EVE, and HMI science teams.
+let sdoLive = false;
+{ const SDO_LIMB = .774;                                   // solar radius / half image width in AIA full-disc frames
+  const video = document.createElement('video');
+  Object.assign(video, { src: 'assets/sun-sdo.mp4', muted: true, loop: true, playsInline: true, preload: 'auto' });
+  video.addEventListener('loadeddata', () => {
+    const map = new THREE.VideoTexture(video); map.colorSpace = THREE.SRGBColorSpace;
+    const disc = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShaderMaterial({
+      uniforms: { uMap: { value: map }, uSize: { value: 2 * SUN_R / SDO_LIMB }, uLimb: { value: SDO_LIMB } },
+      transparent: true, depthWrite: false, toneMapped: false,
+      vertexShader: `uniform float uSize; varying vec2 vUv;
+        void main(){ vUv = position.xy * 2.;
+          float s = length(modelMatrix[0].xyz) * uSize;                  // always faces the camera
+          vec4 c = modelViewMatrix * vec4(0., 0., 0., 1.); c.xy += position.xy * s; gl_Position = projectionMatrix * c; }`,
+      fragmentShader: `uniform sampler2D uMap; uniform float uLimb; varying vec2 vUv;
+        void main(){
+          float r = length(vUv);
+          vec3 col = texture2D(uMap, vUv * .5 + .5).rgb;
+          float lum = max(col.r, max(col.g, col.b));
+          float a = max(1. - smoothstep(uLimb - .012, uLimb, r), clamp(lum * 2.2, 0., 1.)); // solid disc, see-through sky around it
+          a *= 1. - smoothstep(.9, .99, r);                              // cuts the frame corners with the time stamp
+          col.g = min(1., col.g + .2 * col.r);                             // red towards orange
+          col = mix(vec3(dot(col, vec3(.3, .59, .11))), col, .86);          // slightly less saturated
+          gl_FragColor = vec4(col, a);
+          #include <colorspace_fragment>
+        }` }));
+    disc.frustumCulled = false;
+    sdoLive = true;
+    sun.children.forEach(c => { c.visible = false; });
+    sun.add(disc);
+    video.playbackRate = .3;                                // one day of Sun in about 25 s, then it loops
+    if (!reduce.matches) video.play().catch(() => {});
+  }, { once: true });
+  video.load();
+}
 
 const earth = new THREE.Group();
 const earthMaterial = new THREE.MeshStandardMaterial({ color: 0x3b6ea8, roughness: .85, metalness: 0 });
@@ -281,10 +351,17 @@ fetch('assets/stars-bsc5.json').then(r => r.json()).then(cat => {
 // --- Layout -----------------------------------------------------------------
 let closeDistance = 11, systemDistance = 20, restDistance = 11;
 let expanded = false, mix = 0, zoom = null;         // mix: 0 = close to the Moon, 1 = whole system
+// The canvas always covers the whole window. When the sidebar is open the camera renders the scene into
+// the remaining width through a view offset, so the drawing buffer is never resized during the slide
+// (resizing clears it and made the view go black for a moment).
+const sideEl = document.getElementById('params');
+let sideNow = 0, bufW = 0, bufH = 0;
 function layout() {
   const w = world.clientWidth, h = world.clientHeight;
-  renderer.setSize(w, h, false);
-  camera.aspect = w / h;
+  if (w !== bufW || h !== bufH) { renderer.setSize(w, h, false); bufW = w; bufH = h; }
+  const vw = Math.max(w - sideNow, 1);          // width left for the scene
+  camera.aspect = vw / h;
+  if (sideNow > 0) camera.setViewOffset(vw, h, -sideNow, 0, w, h); else camera.clearViewOffset();
   const k = 2 * Math.tan(THREE.MathUtils.degToRad(FOV / 2));
   // After the click: stay close, Moon diameter 46 % of the height (at most 66 % of the width).
   systemDistance = Math.max(2 * R / (.46 * k), 2 * R / (.66 * k * camera.aspect));
@@ -294,7 +371,7 @@ function layout() {
   if (!busy) camera.position.set(0, 0, restDistance);
   camera.updateProjectionMatrix();
   const d = 2 * R / (k * restDistance) * h;   // projected diameter in px, for the keyboard target
-  Object.assign(target.style, { left: (w - d) / 2 + 'px', top: (h - d) / 2 + 'px', width: d + 'px', height: d + 'px' });
+  Object.assign(target.style, { left: (vw - d) / 2 + 'px', top: (h - d) / 2 + 'px', width: d + 'px', height: d + 'px' });
 }
 addEventListener('resize', layout);
 layout();
@@ -380,6 +457,8 @@ function frame(now) {
     placeBodies();
   }
   sunUniforms.uTime.value += dt;
+  const side = sideEl.getBoundingClientRect().width;      // follows the sidebar's slide and drag frame by frame
+  if (Math.abs(side - sideNow) > .25) { sideNow = side; layout(); }
   if (zoom && !flight) {
     const p = Math.min((now - zoom.t0) / zoom.ms, 1);
     const e = p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
@@ -402,10 +481,47 @@ requestAnimationFrame(frame);
     stars: on => { sky.visible = on; },
     relief: on => { const k = on ? 1.35 : 0; material.normalScale.set(k, k); },
   };
-  tab.addEventListener('click', () => tab.setAttribute('aria-expanded', box.classList.toggle('open')));
+  // Opening the sidebar narrows the 3D view to the remaining width; the render loop follows its width.
+  tab.addEventListener('click', () => { const open = box.classList.toggle('open'); document.body.classList.toggle('side-open', open); tab.setAttribute('aria-expanded', open); });
+  // Drag the sidebar edge (or use the arrow keys on it) to set its width.
+  const grip = document.getElementById('params-grip');
+  const setWidth = w => document.body.style.setProperty('--side-w', Math.round(Math.max(300, Math.min(w, 560, innerWidth * .6))) + 'px');
+  grip.addEventListener('pointerdown', e => { e.preventDefault(); grip.setPointerCapture(e.pointerId); document.body.classList.add('side-drag'); });
+  grip.addEventListener('pointermove', e => { if (document.body.classList.contains('side-drag')) setWidth(e.clientX); });
+  const endDrag = () => document.body.classList.remove('side-drag');
+  grip.addEventListener('pointerup', endDrag); grip.addEventListener('pointercancel', endDrag);
+  grip.addEventListener('keydown', e => { const d = { ArrowLeft: -16, ArrowRight: 16 }[e.key]; if (d) { e.preventDefault(); setWidth(box.offsetWidth + d); } });
+  // Landing site: one field that takes any pasted pair and writes it back as "lat, lon" (lon 0-360 E).
+  const coord = document.getElementById('p-coord'), help = document.getElementById('p-coord-help'), copy = document.getElementById('p-copy');
+  const helpText = help.textContent;
+  function readCoord(t) {
+    const m = [...t.replace(/\u2212/g, '-').matchAll(/(-?\d+(?:\.\d+)?)\s*\u00b0?\s*([NSEW])?/gi)];
+    if (m.length !== 2) return null;
+    let [lat, lon] = m.map(x => parseFloat(x[1]) * (/[SW]/i.test(x[2] || '') ? -1 : 1));
+    if (!(Math.abs(lat) <= 90) || !(Math.abs(lon) <= 360)) return null;
+    return [lat, ((lon % 360) + 360) % 360];
+  }
+  function commitCoord() {
+    const c = readCoord(coord.value), ok = !!c;
+    coord.setAttribute('aria-invalid', !ok);
+    help.toggleAttribute('data-error', !ok);
+    help.textContent = ok ? helpText : 'Not a coordinate pair. Use latitude, longitude in degrees, e.g. -89.45, 222.8';
+    if (ok) coord.value = c[0].toFixed(4) + ', ' + c[1].toFixed(4);
+  }
+  coord.addEventListener('change', commitCoord);
+  coord.addEventListener('paste', () => setTimeout(commitCoord));
+  coord.addEventListener('keydown', e => { if (e.key === 'Enter') commitCoord(); });
+  copy.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(coord.value); } catch { coord.select(); document.execCommand('copy'); }
+    const label = copy.querySelector('span'); copy.classList.add('done'); label.textContent = 'Copied';
+    setTimeout(() => { copy.classList.remove('done'); label.textContent = 'Copy'; }, 1400);
+  });
   box.querySelectorAll('.param').forEach(b => b.addEventListener('click', () => {
     const on = b.getAttribute('aria-pressed') !== 'true';
     b.setAttribute('aria-pressed', on); layers[b.dataset.param]?.(on);
   }));
+  // Sliders show their value next to the label (placeholder inputs, no model behind them yet).
+  box.querySelectorAll('.prange').forEach(l => { const r = l.querySelector('input'), o = l.querySelector('output');
+    const show = () => { o.textContent = r.value + ' h'; }; r.addEventListener('input', show); show(); });
   addEventListener('keydown', e => { if (e.key === 'Escape' && box.classList.contains('open')) tab.click(); });
 }
