@@ -1,11 +1,13 @@
-/* The info cards as a table (landing-compare.js). Values from tokens.css only. Same surface as the info cards; opens top
-   left of the scene and can be dragged. One surface: rows and columns are set apart by spacing, the head and the group
+/* The info cards as a table (landing-compare.js). Values from tokens.css only. Same surface as the info cards; as wide and
+   as tall as its content needs, placed by landing-compare.js, and can be dragged. One surface: rows and columns are set apart by spacing, the head and the group
    headings by weight. Green and red are the judgements of the cards; the delay row is the cards' own (landing-cards.css). */
-.compare{position:absolute;left:0;top:0;z-index:5;max-width:calc(100% - 2 * var(--s4));padding:var(--s4) var(--s5) var(--s5);background:var(--surface);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);border:1px solid var(--line);border-radius:var(--r-outer);color:var(--text);font-family:var(--font-ui);font-size:16px;line-height:1.6;user-select:none;cursor:grab;touch-action:none;animation:compare-in var(--t-fast) var(--ease)}
+.compare{position:absolute;left:0;top:0;z-index:5;width:max-content;max-width:calc(100% - 2 * var(--s4));padding:var(--s4) var(--s5) var(--s5);background:var(--surface);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);border:1px solid var(--line);border-radius:var(--r-outer);color:var(--text);font-family:var(--font-ui);font-size:16px;line-height:1.6;user-select:none;cursor:grab;touch-action:none;animation:compare-in var(--t-fast) var(--ease)}
 .compare[hidden],.entering .compare{display:none}
 .compare.moving{cursor:grabbing}
 .compare:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .compare header{display:flex;align-items:center;gap:var(--s3)}
+/* head, verdict and the empty line take the width the table gives the panel; they do not widen it */
+.compare header,.compare-verdict,.compare-empty{width:0;min-width:100%}
 .compare h2{flex:1;margin:0;font:600 20px var(--font-ui);letter-spacing:0}
 .compare-close{flex:none;display:grid;place-items:center;width:36px;height:36px;margin-right:calc(-1 * var(--s2));padding:0;background:none;border:0;border-radius:var(--r-inner);color:var(--text);cursor:pointer;transition:background var(--t-fast)}
 .compare-close svg{width:14px;height:14px}
@@ -14,7 +16,7 @@
 /* The verdict: the one sentence to take away, in the weight of a value */
 .compare-verdict{margin:var(--s2) 0 0;font-weight:600;font-variant-numeric:tabular-nums}
 .compare-verdict[hidden]{display:none}
-.compare-scroll{margin-top:var(--s3);overflow-x:auto}
+.compare-scroll{margin-top:var(--s3);overflow:auto}
 .compare table{width:100%;border-collapse:collapse;line-height:1.45}
 .compare th,.compare td{padding:0 0 0 var(--s5);text-align:right;vertical-align:top;font-variant-numeric:tabular-nums;white-space:nowrap}
 .compare thead th{padding-bottom:var(--s2);font-weight:600;white-space:normal;vertical-align:bottom;line-height:1.3;min-width:200px}
@@ -32,7 +34,7 @@
 .compare-delay .card-delay{margin-top:0;max-width:240px;margin-left:auto}
 /* No card is open: a line of text instead of the table */
 .compare-empty{display:none;margin:var(--s3) 0 0;color:var(--text-muted)}
-.compare.empty{width:auto}
+.compare.empty{width:min(420px,100%)}
 .compare.empty .compare-empty{display:block}.compare.empty .compare-verdict,.compare.empty .compare-scroll{display:none}
 @keyframes compare-in{from{opacity:0}}
 @media(prefers-reduced-motion:reduce){.compare{animation:none}.compare-close{transition:none}}
