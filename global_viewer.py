@@ -1,17 +1,23 @@
+import argparse
 import base64
 import json
 import math
+import os
 import re
+import struct
+import threading
 import urllib.parse
 import urllib.request
 import webbrowser
 from datetime import datetime, timedelta, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import numpy as np
 import rasterio
 from rasterio.enums import Resampling
 from rasterio.warp import transform
+from rasterio.windows import Window
 
 # ==============================================================================
 # 1. CONFIGURATION & MISSION PARAMETERS (TIERED RESOLUTION)
@@ -28,7 +34,41 @@ TARGET_LAT_ROWS = 720           # LIGHTWEIGHT GLOBAL MODEL (720x1440 for fast gl
 TILES_PER_CUBE_EDGE = 20        # 6 * 20 * 20 = 2,400 overlapping 200x200 km tiles
 TILE_SIZE_KM = 200.0            # Visible square extent: 200 km x 200 km
 SHADOW_PAD_KM = 25.0            # +25 km on each side (250x250 km total shadow caster, clipped to 200x200 km)
-TILE_GRID_RES = 512             # MAX-DETAIL HIGH-RES MODEL (Loaded ONLY upon clicking a 200x200 km tile)
+# MAX-DETAIL HIGH-RES MODEL (loaded ONLY upon clicking a 200x200 km tile).
+# The grid spans the full 250x250 km shadow caster. 640 px over 250 km puts 512 px on
+# the visible 200x200 km square (~391 m/px) -- the same sampling slice.py uses for its
+# single 200x200 km map, i.e. the full LDEM64 resolution.
+TILE_GRID_RES = 640
+
+# On-demand tile data: the page fetches "tiles/tile_NNNN.bin" when a square is opened.
+# The local server below cuts that square out of the full-resolution GeoTIFF on first
+# request and keeps the result in TILE_CACHE_DIR, so every square is computed only once.
+TILE_CACHE_DIR = "tiles"
+TILE_FILE_MAGIC = b"LTIL"
+TILE_FILE_VERSION = 2
+TILE_HEADER_BYTES = 40
+SERVER_HOST = "127.0.0.1"
+SERVER_PORT = 8765
+
+# FAR FIELD: terrain beyond the 250x250 km tile block still casts shadows when the Sun is
+# low (near the poles it never rises above ~1.5 deg). A mountain that tops the observer by
+# dH stays above the horizontal out to sqrt(2*R*dH), e.g. 186 km for dH = 10 km. Every tile
+# therefore also carries a coarse height grid out to FAR_FIELD_HALF_KM from its centre. The
+# page uses it as an invisible shadow caster and for the horizon of the site.
+FAR_FIELD_HALF_KM = 300.0       # reach from the tile centre (200 km beyond the visible edge)
+FAR_FIELD_STEP_KM = 1.0         # far grid spacing; each value is the mean of 2x2 sub-samples
+FAR_FIELD_RES = int(round(2.0 * FAR_FIELD_HALF_KM / FAR_FIELD_STEP_KM)) + 1
+FAR_HEADER_BYTES = 16
+
+# three.js: fetched once into VENDOR_DIR and served by the local server, so the page also
+# works without internet. Opened as a plain file, the page keeps using the CDN.
+THREE_VERSION = "0.160.0"
+THREE_CDN_BASE = f"https://unpkg.com/three@{THREE_VERSION}/"
+VENDOR_DIR = "vendor"
+THREE_LOCAL_DIR = f"{VENDOR_DIR}/three@{THREE_VERSION}"
+THREE_FILES = ["build/three.module.js", "examples/jsm/controls/OrbitControls.js"]
+
+EARTH_MEAN_DISTANCE_KM = 384400.0
 
 lunar_geo_crs = "+proj=longlat +R=1737400 +no_defs"
 
@@ -36,6 +76,14 @@ lunar_geo_crs = "+proj=longlat +R=1737400 +no_defs"
 START_TIME_UTC = "2027-01-01 00:00"
 STOP_TIME_UTC = "2028-01-01 00:00"
 STEP_SIZE = "1h"
+
+
+_cli = argparse.ArgumentParser(description="Lunar Global Tiered 3D viewer generator + on-demand tile server")
+_cli.add_argument("--port", type=int, default=SERVER_PORT, help="Port des lokalen Kachel-Servers")
+_cli.add_argument("--no-server", action="store_true",
+                  help="Nur die HTML-Datei schreiben (Quadrate dann nur in grober Auflösung)")
+_cli.add_argument("--no-browser", action="store_true", help="Browser nicht automatisch öffnen")
+CLI_ARGS = _cli.parse_known_args()[0]
 
 
 def ask_yes_no(prompt_text: str, default: bool = False) -> bool:
@@ -62,7 +110,13 @@ def fetch_jpl_horizons_ephemeris(
     start_time: str,
     stop_time: str,
     step_size: str = "1h",
+    with_range: bool = False,
 ):
+    """Hourly azimuth/elevation of a body seen from a point on the Moon.
+
+    with_range=True also returns the distance observer -> body in km (Horizons quantity 20),
+    or None per step where it could not be read.
+    """
     lon_east = lon_deg % 360.0
     site_coord = f"{lon_east:.6f},{lat_deg:.6f},{alt_km:.4f}"
 
@@ -78,7 +132,8 @@ def fetch_jpl_horizons_ephemeris(
         "START_TIME": f"'{start_time}'",
         "STOP_TIME": f"'{stop_time}'",
         "STEP_SIZE": f"'{step_size}'",
-        "QUANTITIES": "'4'",
+        "QUANTITIES": "'4,20'" if with_range else "'4'",
+        "RANGE_UNITS": "'KM'",
         "CAL_FORMAT": "'CAL'",
         "TIME_DIGITS": "'MINUTES'",
         "ANG_FORMAT": "'DEG'",
@@ -109,6 +164,8 @@ def fetch_jpl_horizons_ephemeris(
     timestamps = []
     azimuths = []
     elevations = []
+    ranges_km = []
+    wanted = 3 if with_range else 2
 
     for line in match.group(1).strip().splitlines():
         parts = [p.strip() for p in line.split(",")]
@@ -118,16 +175,19 @@ def fetch_jpl_horizons_ephemeris(
         for token in parts[1:]:
             try:
                 numeric_vals.append(float(token))
-                if len(numeric_vals) == 2:
+                if len(numeric_vals) == wanted:
                     break
             except ValueError:
                 continue
 
-        if len(numeric_vals) == 2:
+        if len(numeric_vals) >= 2:
             timestamps.append(parts[0])
             azimuths.append(round(numeric_vals[0], 4))
             elevations.append(round(numeric_vals[1], 4))
+            ranges_km.append(numeric_vals[2] if len(numeric_vals) >= 3 else None)
 
+    if with_range:
+        return timestamps, azimuths, elevations, ranges_km
     return timestamps, azimuths, elevations
 
 
@@ -259,7 +319,7 @@ def compute_global_exposure_maps(
     is_full_globe: bool,
     exaggeration: float,
     sun_dirs_moon: np.ndarray,
-    earth_dirs_moon: np.ndarray,
+    earth_pos_moon_km: np.ndarray,
 ):
     rows, cols = z_grid.shape
     lat_min, lat_max = float(np.min(lats_1d)), float(np.max(lats_1d))
@@ -337,7 +397,7 @@ def compute_global_exposure_maps(
             np.maximum(max_el_s, elev_deg, out=max_el_s)
 
     sun_sub = sun_dirs_moon[::4].T
-    earth_sub = earth_dirs_moon[::4].T
+    earth_pos_sub = earth_pos_moon_km[::4]          # (T, 3) Earth position, Moon-centred, km
 
     sun_exp_comp = np.zeros((comp_h, comp_w), dtype=np.float32)
     radio_exp_comp = np.zeros((comp_h, comp_w), dtype=np.float32)
@@ -361,9 +421,14 @@ def compute_global_exposure_maps(
         s_vis = np.clip((s_el - s_hor + sun_rad_deg) / (2.0 * sun_rad_deg), 0.0, 1.0)
         sun_exp_comp[r] = s_vis.mean(axis=1)
 
-        e_east = e_row @ earth_sub
-        e_north = n_row @ earth_sub
-        e_up = np.clip(u_row @ earth_sub, -1.0, 1.0)
+        # Direction to the Earth from each cell itself. Against the direction from the Moon's
+        # centre it differs by up to 0.26 deg (parallax), which matters where the Earth is low.
+        site_km = u_row * (r0[r][:, None] / 1000.0)
+        to_earth = earth_pos_sub[None, :, :] - site_km[:, None, :]
+        to_earth /= np.linalg.norm(to_earth, axis=2, keepdims=True)
+        e_east = np.einsum("ck,ctk->ct", e_row, to_earth)
+        e_north = np.einsum("ck,ctk->ct", n_row, to_earth)
+        e_up = np.clip(np.einsum("ck,ctk->ct", u_row, to_earth), -1.0, 1.0)
         e_el = np.degrees(np.arcsin(e_up))
         e_az = (np.degrees(np.arctan2(e_east, e_north)) + 360.0) % 360.0
         e_sec = (np.floor(e_az / sector_deg).astype(np.int32)) % num_sectors
@@ -394,6 +459,12 @@ load_exposure_maps = ask_yes_no(
 )
 
 global_tif_path = next((p for p in GLOBAL_TIF_CANDIDATES if Path(p).exists()), GLOBAL_TIF_CANDIDATES[0])
+if not Path(global_tif_path).exists():
+    raise SystemExit(
+        "\nGeoTIFF nicht gefunden. Erwartet wird eine dieser Dateien im aktuellen Ordner:\n  "
+        + "\n  ".join(GLOBAL_TIF_CANDIDATES)
+        + "\nDownload (683 MB): https://pgda.gsfc.nasa.gov/data/LOLA_PA/LDEM64_PA_pixel_202405.tif"
+    )
 total_steps_log = 3 if load_exposure_maps else 2
 print(f"[1/{total_steps_log}] Loading Global Lunar GeoTIFF (Tiered Global Low-Res {TARGET_LAT_ROWS}x{TARGET_LAT_ROWS*2}): {global_tif_path} ...")
 
@@ -430,9 +501,12 @@ with rasterio.open(global_tif_path) as dataset:
 
     median_val = float(np.median(valid_vals))
     max_abs_val = float(np.max(np.abs(valid_vals)))
-    if median_val > 1_000_000.0:
+    # Remember the unit decision so the full-resolution tiles are converted identically.
+    src_elev_is_radius_m = median_val > 1_000_000.0
+    src_elev_is_km = (not src_elev_is_radius_m) and max_abs_val < 30.0
+    if src_elev_is_radius_m:
         g_z_grid -= MOON_RADIUS_M
-    elif max_abs_val < 30.0:
+    elif src_elev_is_km:
         g_z_grid *= 1000.0
 
     g_min_z = float(np.nanmin(g_z_grid))
@@ -474,6 +548,23 @@ with rasterio.open(global_tif_path) as dataset:
         lons_1d = np.array(lon_f).reshape(g_z_grid.shape)[target_rows // 2, :]
         lats_1d = np.array(lat_f).reshape(g_z_grid.shape)[:, target_cols // 2]
 
+    # Full-resolution georeferencing for the on-demand tiles. The source raster is treated
+    # as a regular lat/lon grid, exactly like the low-res globe above: longitude is linear in
+    # the column index, latitude is linear in the row index. lons_1d / lats_1d hold the
+    # centres of the decimated cells; a decimated cell k covers the source pixels
+    # [k * step, (k + 1) * step), so its centre sits at source pixel index (k + 0.5) * step - 0.5.
+    src_width, src_height = int(raw_w), int(raw_h)
+    src_nodata = dataset.nodata
+    src_scale, src_offset = float(scale_factor), float(offset_val)
+
+    _q = max(1, target_cols // 4)
+    _dlon_q = ((float(lons_1d[_q]) - float(lons_1d[0]) + 180.0) % 360.0) - 180.0
+    src_deg_per_col = _dlon_q / (_q * col_step)
+    src_lon_col0 = float(lons_1d[0]) - (0.5 * col_step - 0.5) * src_deg_per_col
+    src_deg_per_row = (float(lats_1d[-1]) - float(lats_1d[0])) / ((target_rows - 1) * row_step)
+    src_lat_row0 = float(lats_1d[0]) - (0.5 * row_step - 0.5) * src_deg_per_row
+    src_lon_wraps = abs(abs(src_deg_per_col) * src_width - 360.0) < 0.5
+
 lons_norm = ((lons_1d + 180.0) % 360.0) - 180.0
 lon_sort_idx = np.argsort(lons_norm)
 lons_norm = lons_norm[lon_sort_idx]
@@ -494,6 +585,264 @@ print(
 
 
 # ==============================================================================
+# 4b. ON-DEMAND FULL-RESOLUTION TILES (slice.py detail for every 200x200 km square)
+# ==============================================================================
+# slice.py cuts ONE 200x200 km square out of the full-resolution GeoTIFF. The functions
+# below do the same for ANY of the 2,400 squares, on request of the web page, on exactly
+# the sample grid the page uses for its tile mesh (TileDetailView.loadTile).
+MOON_RADIUS_KM = MOON_RADIUS_M / 1000.0
+TILE_FULL_SIZE_KM = TILE_SIZE_KM + 2.0 * SHADOW_PAD_KM
+TOTAL_TILES = 6 * TILES_PER_CUBE_EDGE * TILES_PER_CUBE_EDGE
+TILE_HEADER_FORMAT = "<4sHHIHHffffff"
+assert struct.calcsize(TILE_HEADER_FORMAT) == TILE_HEADER_BYTES
+
+# Cube faces as (normal, axis_u, axis_v). MUST match LUNAR_TILES in the page script:
+# same faces, same order, rows = v, columns = u.
+_CUBE_FACES = [
+    ((1, 0, 0), (0, 1, 0), (0, 0, 1)),
+    ((-1, 0, 0), (0, -1, 0), (0, 0, 1)),
+    ((0, 1, 0), (-1, 0, 0), (0, 0, 1)),
+    ((0, -1, 0), (1, 0, 0), (0, 0, 1)),
+    ((0, 0, 1), (0, 1, 0), (-1, 0, 0)),
+    ((0, 0, -1), (0, 1, 0), (1, 0, 0)),
+]
+
+
+def tile_center_and_basis(tile_idx: int):
+    """Moon-fixed unit vectors (up, east, north) of a tile centre -- mirrors getLocalMoonBasis() in the page."""
+    n = TILES_PER_CUBE_EDGE
+    face_idx, rem = divmod(tile_idx, n * n)
+    r, c = divmod(rem, n)
+    normal, ax_u, ax_v = (np.array(a, dtype=np.float64) for a in _CUBE_FACES[face_idx])
+    u = -1.0 + 2.0 * (c + 0.5) / n
+    v = -1.0 + 2.0 * (r + 0.5) / n
+    up = normal + ax_u * u + ax_v * v
+    up /= np.linalg.norm(up)
+
+    if abs(up[2]) < 0.999999:
+        east = np.array([-up[1], up[0], 0.0])
+        east /= np.linalg.norm(east)
+        north = np.cross(up, east)
+        north /= np.linalg.norm(north)
+    elif up[2] < 0:
+        east = np.array([0.0, 1.0, 0.0])
+        north = np.array([1.0, 0.0, 0.0])
+    else:
+        east = np.array([0.0, 1.0, 0.0])
+        north = np.array([-1.0, 0.0, 0.0])
+    return up, east, north
+
+
+def tile_km_to_latlon(tile_idx: int, xx: np.ndarray, yy: np.ndarray):
+    """Lat/lon of points given in a tile's local km (x east, y north) -- mirrors tileKmToMoonUnit()."""
+    up, east, north = tile_center_and_basis(tile_idx)
+    rho = np.hypot(xx, yy)
+    chi = rho / MOON_RADIUS_KM
+    cc = np.cos(chi)
+    sc = np.where(rho > 1e-9, np.sin(chi) / np.maximum(rho, 1e-12), 1.0 / MOON_RADIUS_KM)
+
+    ux = cc * up[0] + sc * (xx * east[0] + yy * north[0])
+    uy = cc * up[1] + sc * (xx * east[1] + yy * north[1])
+    uz = cc * up[2] + sc * (xx * east[2] + yy * north[2])
+    norm = np.sqrt(ux * ux + uy * uy + uz * uz)
+
+    lat_deg = np.degrees(np.arcsin(np.clip(uz / norm, -1.0, 1.0)))
+    lon_deg = np.degrees(np.arctan2(uy, ux))
+    return lat_deg, lon_deg
+
+
+def tile_latlon_grid(tile_idx: int, res: int = TILE_GRID_RES):
+    """Lat/lon of every mesh vertex of a tile -- mirrors the vertex loop in loadTile()."""
+    half = TILE_FULL_SIZE_KM * 0.5
+    frac = np.arange(res, dtype=np.float64) / (res - 1)
+    x_km = -half + frac * TILE_FULL_SIZE_KM      # columns: west -> east
+    y_km = half - frac * TILE_FULL_SIZE_KM       # rows: north -> south
+    xx, yy = np.meshgrid(x_km, y_km)
+    return tile_km_to_latlon(tile_idx, xx, yy)
+
+
+def sample_far_field(tile_idx: int) -> np.ndarray:
+    """Coarse heights (m) around a tile out to FAR_FIELD_HALF_KM: FAR_FIELD_RES x FAR_FIELD_RES values.
+
+    Vertex (row, col) sits at x = -half + col * step (east), y = half - row * step (north) in the
+    tile's local km. Each value is the mean of 2x2 sub-samples inside its cell, so the surface is
+    neither lifted (as a maximum would do) nor thinned out to single points.
+    """
+    step = FAR_FIELD_STEP_KM
+    idx = np.arange(FAR_FIELD_RES, dtype=np.float64)
+    x_km = -FAR_FIELD_HALF_KM + idx * step
+    y_km = FAR_FIELD_HALF_KM - idx * step
+    xx, yy = np.meshgrid(x_km, y_km)
+
+    offsets = [(-0.25, -0.25), (0.25, -0.25), (-0.25, 0.25), (0.25, 0.25)]
+    xs = np.concatenate([xx + ox * step for ox, _ in offsets], axis=0)
+    ys = np.concatenate([yy + oy * step for _, oy in offsets], axis=0)
+    lat_deg, lon_deg = tile_km_to_latlon(tile_idx, xs, ys)
+    z = sample_source_full_res(lat_deg, lon_deg)       # one read of the source for all sub-samples
+    return z.reshape(len(offsets), FAR_FIELD_RES, FAR_FIELD_RES).mean(axis=0)
+
+
+_tile_source = None
+_tile_source_lock = threading.Lock()
+
+
+def read_source_block(row_lo: int, row_hi: int, col_lo: int, col_hi: int) -> np.ndarray:
+    """Full-resolution elevations in metres for source rows/columns [lo, hi] (inclusive).
+
+    Column indices may run past either edge of the raster; they wrap around the globe.
+    """
+    global _tile_source
+    n_rows = row_hi - row_lo + 1
+    pieces = []
+    with _tile_source_lock:
+        if _tile_source is None:
+            _tile_source = rasterio.open(global_tif_path)
+        c = col_lo
+        while c <= col_hi:
+            c_mod = c % src_width
+            n_cols = min(col_hi - c + 1, src_width - c_mod)
+            pieces.append(_tile_source.read(1, window=Window(c_mod, row_lo, n_cols, n_rows)))
+            c += n_cols
+
+    # float32 keeps the far-field read near a pole (about 25 million pixels) small. Radius-type
+    # rasters (values around 1.7e6 m) need float64 until the radius is subtracted.
+    work_dtype = np.float64 if src_elev_is_radius_m else np.float32
+    block = (pieces[0] if len(pieces) == 1 else np.concatenate(pieces, axis=1)).astype(work_dtype)
+    if src_nodata is not None:
+        block[np.isclose(block, src_nodata)] = np.nan
+    block[~np.isfinite(block)] = np.nan
+    if src_scale != 1.0 or src_offset != 0.0:
+        block = block * src_scale + src_offset
+    if src_elev_is_radius_m:
+        block -= MOON_RADIUS_M
+    elif src_elev_is_km:
+        block *= 1000.0
+    return block
+
+
+def sample_source_full_res(lat_deg: np.ndarray, lon_deg: np.ndarray) -> np.ndarray:
+    """Bilinear elevation (m) from the full-resolution GeoTIFF at the given lat/lon points."""
+    row_f = np.clip((lat_deg - src_lat_row0) / src_deg_per_row, 0.0, src_height - 1.0)
+    col_f = (lon_deg - src_lon_col0) / src_deg_per_col
+
+    if src_lon_wraps:
+        # Unwrap around the centre point so the needed column range is as narrow as possible.
+        c_ref = float(col_f[col_f.shape[0] // 2, col_f.shape[1] // 2])
+        col_f = c_ref + ((col_f - c_ref + src_width * 0.5) % src_width) - src_width * 0.5
+        c0 = np.floor(col_f).astype(np.int64)
+        c1 = c0 + 1
+    else:
+        col_f = np.clip(col_f, 0.0, src_width - 1.0)
+        c0 = np.floor(col_f).astype(np.int64)
+        c1 = np.minimum(c0 + 1, src_width - 1)
+
+    r0 = np.floor(row_f).astype(np.int64)
+    r1 = np.minimum(r0 + 1, src_height - 1)
+
+    row_lo, row_hi = int(r0.min()), int(r1.max())
+    col_lo, col_hi = int(c0.min()), int(c1.max())
+    block = read_source_block(row_lo, row_hi, col_lo, col_hi)
+
+    finite = np.isfinite(block)
+    if not finite.all():
+        block = np.where(finite, block, float(block[finite].min()) if finite.any() else 0.0)
+
+    fr = row_f - r0
+    fc = col_f - c0
+    v00 = block[r0 - row_lo, c0 - col_lo]
+    v10 = block[r0 - row_lo, c1 - col_lo]
+    v01 = block[r1 - row_lo, c0 - col_lo]
+    v11 = block[r1 - row_lo, c1 - col_lo]
+    return (v00 * (1.0 - fc) + v10 * fc) * (1.0 - fr) + (v01 * (1.0 - fc) + v11 * fc) * fr
+
+
+def _quantise_u16(z_m: np.ndarray):
+    """Heights -> (z_min, z_max, little-endian uint16). The page rebuilds metres from the float32
+    header values, so quantise against those."""
+    z_min = float(np.float32(z_m.min()))
+    z_max = float(np.float32(z_m.max()))
+    span = max(1e-6, z_max - z_min)
+    u16 = np.round(np.clip((z_m - z_min) / span, 0.0, 1.0) * 65535.0).astype("<u2")
+    return z_min, z_max, u16
+
+
+def tile_file_size() -> int:
+    return (TILE_HEADER_BYTES + TILE_GRID_RES * TILE_GRID_RES * 2
+            + FAR_HEADER_BYTES + FAR_FIELD_RES * FAR_FIELD_RES * 2)
+
+
+def build_tile_bytes(tile_idx: int) -> bytes:
+    """One tile as the page reads it (all little-endian):
+
+    40-byte header, res*res uint16 full-resolution heights (the 250x250 km block),
+    16-byte far-field header, far_res*far_res uint16 coarse heights (the surroundings).
+    """
+    lat_deg, lon_deg = tile_latlon_grid(tile_idx)
+    z_min, z_max, u16 = _quantise_u16(sample_source_full_res(lat_deg, lon_deg))
+    far_min, far_max, far_u16 = _quantise_u16(sample_far_field(tile_idx))
+
+    up, _, _ = tile_center_and_basis(tile_idx)
+    center_lat = math.degrees(math.asin(max(-1.0, min(1.0, float(up[2])))))
+    center_lon = math.degrees(math.atan2(float(up[1]), float(up[0])))
+    header = struct.pack(
+        TILE_HEADER_FORMAT,
+        TILE_FILE_MAGIC, TILE_FILE_VERSION, TILE_GRID_RES, tile_idx, TILES_PER_CUBE_EDGE, 0,
+        TILE_SIZE_KM, SHADOW_PAD_KM, z_min, z_max, center_lat, center_lon,
+    )
+    far_header = struct.pack("<HHfff", FAR_FIELD_RES, 0, FAR_FIELD_HALF_KM, far_min, far_max)
+    return header + u16.tobytes() + far_header + far_u16.tobytes()
+
+
+def tile_cache_path(tile_idx: int) -> Path:
+    # File number = the label shown in the viewer (Quadrat #0001 -> tile_0001.bin).
+    return Path(TILE_CACHE_DIR) / f"tile_{tile_idx + 1:04d}.bin"
+
+
+def cached_tile_is_current(blob: bytes, tile_idx: int) -> bool:
+    """True if a cached file was built with the current tile settings."""
+    if len(blob) != tile_file_size():
+        return False
+    magic, version, res, idx, n_edge, _, size_km, pad_km = struct.unpack_from("<4sHHIHHff", blob, 0)
+    far_res, _, far_half_km = struct.unpack_from("<HHf", blob, TILE_HEADER_BYTES + TILE_GRID_RES * TILE_GRID_RES * 2)
+    return (
+        magic == TILE_FILE_MAGIC and version == TILE_FILE_VERSION and res == TILE_GRID_RES
+        and idx == tile_idx and n_edge == TILES_PER_CUBE_EDGE
+        and abs(size_km - TILE_SIZE_KM) < 1e-3 and abs(pad_km - SHADOW_PAD_KM) < 1e-3
+        and far_res == FAR_FIELD_RES and abs(far_half_km - FAR_FIELD_HALF_KM) < 1e-3
+    )
+
+
+_tile_build_lock = threading.Lock()
+
+
+def get_tile_bytes(tile_idx: int):
+    """Return (tile bytes, came_from_cache). Builds the tile from the GeoTIFF on first request."""
+    path = tile_cache_path(tile_idx)
+    with _tile_build_lock:
+        if path.exists():
+            blob = path.read_bytes()
+            if cached_tile_is_current(blob, tile_idx):
+                return blob, True
+
+        blob = build_tile_bytes(tile_idx)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            ignore_file = path.parent / ".gitignore"
+            if not ignore_file.exists():
+                ignore_file.write_text(
+                    "# Tile cache written by global_viewer.py (about 1.5 MB per opened square).\n"
+                    "*.bin\n*.tmp\n",
+                    encoding="utf-8",
+                )
+            tmp_path = path.with_suffix(".tmp")
+            tmp_path.write_bytes(blob)
+            tmp_path.replace(path)
+        except OSError as exc:
+            print(f"Warning: could not write tile cache file {path} ({exc}).")
+        return blob, False
+
+
+# ==============================================================================
 # 5. QUERY JPL HORIZONS EPHEMERIS & OPTIONAL EXPOSURE MAPS
 # ==============================================================================
 print(f"[2/{total_steps_log}] Querying NASA JPL Horizons API ({START_TIME_UTC} to {STOP_TIME_UTC})...")
@@ -507,7 +856,7 @@ try:
         stop_time=STOP_TIME_UTC,
         step_size=STEP_SIZE,
     )
-    _, earth_az, earth_el = fetch_jpl_horizons_ephemeris(
+    _, earth_az, earth_el, earth_range_km = fetch_jpl_horizons_ephemeris(
         target_id="399",
         lon_deg=0.0,
         lat_deg=0.0,
@@ -515,17 +864,31 @@ try:
         start_time=START_TIME_UTC,
         stop_time=STOP_TIME_UTC,
         step_size=STEP_SIZE,
+        with_range=True,
     )
+    if any(v is None or not 300_000.0 < v < 450_000.0 for v in earth_range_km):
+        print("Warning: Earth distance from JPL Horizons not readable; using the mean distance (384,400 km).")
+        earth_range_km = [EARTH_MEAN_DISTANCE_KM] * len(earth_az)
     ephem_source = "NASA JPL Horizons API (Live Ephemeris)"
 except Exception as exc:
     print(f"Warning: JPL Horizons request failed ({exc}). Using analytical fallback.")
     timestamps, sun_az, sun_el, earth_az, earth_el = generate_analytical_fallback(
         0.0, 0.0, START_TIME_UTC, hours=8760
     )
+    earth_range_km = [EARTH_MEAN_DISTANCE_KM] * len(earth_az)
     ephem_source = "Analytical Lunar Ephemeris (Offline Fallback)"
 
 sun_dirs_moon = az_el_to_moon_fixed_dirs(0.0, 0.0, sun_az, sun_el)
-earth_dirs_moon = az_el_to_moon_fixed_dirs(0.0, 0.0, earth_az, earth_el)
+
+# The ephemeris is taken at the surface point 0 deg / 0 deg. For the Sun that direction is good
+# for the whole Moon (parallax 0.0007 deg). The Earth is close: seen from another site it sits
+# up to 0.26 deg elsewhere. So keep the Earth's POSITION relative to the Moon's centre
+# (observer position + range * direction); every site derives its own direction from it.
+earth_dirs_observer = az_el_to_moon_fixed_dirs(0.0, 0.0, earth_az, earth_el)
+observer_pos_km = np.array([MOON_RADIUS_M / 1000.0, 0.0, 0.0])
+earth_pos_moon_km = observer_pos_km[None, :] + np.asarray(earth_range_km, dtype=np.float64)[:, None] * earth_dirs_observer
+earth_dist_km = np.linalg.norm(earth_pos_moon_km, axis=1)
+earth_dirs_moon = earth_pos_moon_km / earth_dist_km[:, None]      # direction from the Moon's centre
 
 if load_exposure_maps:
     print(f"[3/{total_steps_log}] Computing global 2027 Average Sunlight & Radio (DTE) Exposure maps...")
@@ -536,7 +899,7 @@ if load_exposure_maps:
         is_full_globe=is_full_globe,
         exaggeration=vertical_exaggeration,
         sun_dirs_moon=sun_dirs_moon,
-        earth_dirs_moon=earth_dirs_moon,
+        earth_pos_moon_km=earth_pos_moon_km,
     )
     sun_exp_b64 = encode_u16_b64(sun_exposure_grid, 0.0, 1.0)
     radio_exp_b64 = encode_u16_b64(radio_exposure_grid, 0.0, 1.0)
@@ -547,6 +910,33 @@ else:
 
 sun_dirs_xyz = moon_fixed_to_threejs_list(sun_dirs_moon)
 earth_dirs_xyz = moon_fixed_to_threejs_list(earth_dirs_moon)
+
+
+# ==============================================================================
+# 5b. LOCAL COPY OF THREE.JS (so the served page does not need internet)
+# ==============================================================================
+def ensure_local_three() -> bool:
+    """Download the two three.js files once into VENDOR_DIR. True if both are present afterwards."""
+    for rel in THREE_FILES:
+        target = Path(THREE_LOCAL_DIR) / rel
+        if target.exists() and target.stat().st_size > 1000:
+            continue
+        try:
+            req = urllib.request.Request(THREE_CDN_BASE + rel, headers={"User-Agent": "LunarGlobalTiered/3.0"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = resp.read()
+            if len(data) < 1000:
+                raise ValueError("unexpectedly small file")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+            print(f"three.js: {rel} gespeichert in '{THREE_LOCAL_DIR}/'")
+        except Exception as exc:
+            print(f"Hinweis: three.js konnte nicht lokal abgelegt werden ({exc}); die Seite lädt es aus dem Internet.")
+            return False
+    return True
+
+
+has_local_three = (not CLI_ARGS.no_server) and ensure_local_three()
 
 
 # ==============================================================================
@@ -561,6 +951,12 @@ combined_payload = {
     "tile_size_km": TILE_SIZE_KM,
     "shadow_pad_km": SHADOW_PAD_KM,
     "tile_grid_res": TILE_GRID_RES,
+    "tile_url_prefix": f"{TILE_CACHE_DIR}/tile_",
+    "tile_header_bytes": TILE_HEADER_BYTES,
+    "tile_file_version": TILE_FILE_VERSION,
+    "far_res": FAR_FIELD_RES,
+    "far_half_km": FAR_FIELD_HALF_KM,
+    "far_header_bytes": FAR_HEADER_BYTES,
     "has_exposure_maps": bool(load_exposure_maps),
     "global": {
         "rows": int(g_z_grid.shape[0]),
@@ -581,6 +977,7 @@ combined_payload = {
         "timestamps": timestamps,
         "sun_dirs": sun_dirs_xyz,
         "earth_dirs": earth_dirs_xyz,
+        "earth_dist_km": np.round(earth_dist_km, 1).tolist(),
     },
 }
 
@@ -608,6 +1005,24 @@ html_template = f"""<!DOCTYPE html>
     color: #ffd43b; font-size: 13px; font-weight: 700; letter-spacing: 0.4px;
     box-shadow: 0 8px 28px rgba(0, 0, 0, 0.65);
   }}
+  #transition-box {{
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+  }}
+  #tile-progress {{ width: 340px; display: none; }}
+  #tile-progress-track {{
+    height: 8px; border-radius: 999px; overflow: hidden;
+    background: rgba(255, 255, 255, 0.10); border: 1px solid rgba(255, 212, 59, 0.28);
+  }}
+  #tile-progress-fill {{
+    height: 100%; width: 0%; border-radius: 999px;
+    background: linear-gradient(90deg, #d29922 0%, #ffd43b 100%);
+    transition: width 0.12s linear;
+  }}
+  #tile-progress-row {{
+    display: flex; justify-content: space-between; gap: 12px; margin-top: 7px;
+    font-size: 11.5px; color: #9da7b3; font-variant-numeric: tabular-nums;
+  }}
+  #tile-progress-pct {{ color: #ffd43b; font-weight: 700; }}
 
   #hud {{
     position: absolute; top: 16px; left: 16px; width: 358px;
@@ -768,7 +1183,7 @@ html_template = f"""<!DOCTYPE html>
 
   .scrub-container {{ position: relative; width: 100%; height: 22px; display: flex; align-items: center; }}
   #power-strip {{
-    position: absolute; left: 0; right: 0; height: 8px; border-radius: 4px;
+    position: absolute; left: 0; right: 0; width: 100%; height: 8px; border-radius: 4px;
     border: 1px solid rgba(255, 255, 255, 0.18); pointer-events: none;
   }}
   #time-slider {{
@@ -835,18 +1250,28 @@ html_template = f"""<!DOCTYPE html>
   .tt-radio {{ color: #00f5d4; font-weight: 700; }}
   .tt-cta {{ color: #ffd43b; font-weight: 700; }}
 </style>
-<script type="importmap">
-{{
-  "imports": {{
-    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-  }}
-}}
+<script>
+  // three.js comes from the local server when global_viewer.py stored a copy (works offline);
+  // opened as a plain file, or without that copy, it comes from the CDN.
+  (function () {{
+    const served = location.protocol === 'http:' || location.protocol === 'https:';
+    const base = ({'true' if has_local_three else 'false'} && served) ? './{THREE_LOCAL_DIR}/' : '{THREE_CDN_BASE}';   // import maps need './' for relative paths
+    const map = {{ imports: {{ 'three': base + 'build/three.module.js', 'three/addons/': base + 'examples/jsm/' }} }};
+    document.write('<script type="importmap">' + JSON.stringify(map) + '<\\/script>');
+  }})();
 </script>
 </head>
 <body>
 <div id="canvas-container"></div>
-<div id="transition-veil"><div id="transition-label">Lade Max-Detail 200×200 km Kachel ({TILE_GRID_RES}px)...</div></div>
+<div id="transition-veil">
+  <div id="transition-box">
+    <div id="transition-label">Lade Max-Detail 200×200 km Kachel ({TILE_GRID_RES}px)...</div>
+    <div id="tile-progress">
+      <div id="tile-progress-track"><div id="tile-progress-fill"></div></div>
+      <div id="tile-progress-row"><span id="tile-progress-stage">Höhendaten werden angefordert …</span><span id="tile-progress-pct">0%</span></div>
+    </div>
+  </div>
+</div>
 
 <div id="hud">
   <button class="nav-action-btn back-global" id="back-to-global-btn" style="display: none;">
@@ -1020,7 +1445,21 @@ const G_Z_VALUES = decodeU16Grid(GDATA.z_b64, GDATA.min_z, GDATA.max_z);
 const G_SUN_EXP_VALUES = HAS_EXPOSURE_MAPS ? decodeU16Grid(GDATA.sun_exp_b64, 0.0, 1.0) : null;
 const G_RADIO_EXP_VALUES = HAS_EXPOSURE_MAPS ? decodeU16Grid(GDATA.radio_exp_b64, 0.0, 1.0) : null;
 const SUN_DIRS = new Float32Array(EPHEM.sun_dirs);
-const EARTH_DIRS = new Float32Array(EPHEM.earth_dirs);
+const EARTH_DIRS = new Float32Array(EPHEM.earth_dirs);       // unit vectors from the Moon's centre
+const EARTH_DIST_KM = new Float32Array(EPHEM.earth_dist_km); // Moon centre -> Earth centre
+
+// Unit vector from a surface site to the Earth at one time step (three.js axes, like EARTH_DIRS).
+// The Earth is close enough that its direction depends on where on the Moon you stand: up to
+// 0.26° against the direction from the Moon's centre. siteKm: site position from the Moon's centre.
+function earthDirFromSite(stepIdx, siteKm, out) {{
+  const b = stepIdx * 3;
+  const d = EARTH_DIST_KM[stepIdx];
+  return out.set(
+    EARTH_DIRS[b] * d - siteKm.x,
+    EARTH_DIRS[b + 1] * d - siteKm.y,
+    EARTH_DIRS[b + 2] * d - siteKm.z
+  ).normalize();
+}}
 
 const container = document.getElementById('canvas-container');
 const scene = new THREE.Scene();
@@ -1724,7 +2163,10 @@ const GlobalView = (() => {{
         const v01 = vRow1 + c;
         const v11 = vRow1 + c + 1;
 
-        for (let i = 0; i < levels.length; i++) {{
+        // Only the levels that can cross this cell (levels[k] = firstIso + k * interval).
+        const iLo = Math.max(0, Math.floor((qMin - firstIso) / intervalMeters));
+        const iHi = Math.min(levels.length - 1, Math.ceil((qMax - firstIso) / intervalMeters));
+        for (let i = iLo; i <= iHi; i++) {{
           const isoZ = levels[i];
           if (isoZ < qMin || isoZ > qMax) continue;
 
@@ -1867,6 +2309,8 @@ const GlobalView = (() => {{
   let selectedTileIdx = 0;
   const siteOrigin = new THREE.Vector3();
   const siteUpDir = new THREE.Vector3();
+  const sitePosKm = new THREE.Vector3();      // selected site from the Moon's centre, km
+  const _earthSiteVec = new THREE.Vector3();
   const siteEastDir = new THREE.Vector3();
   const siteNorthDir = new THREE.Vector3();
   const horizonProfile = new Float32Array(360);
@@ -1922,6 +2366,7 @@ const GlobalView = (() => {{
     const surfR = (R_MOON_M + tile.centerElevM * DATA.exaggeration) * SCALE;
     siteOrigin.copy(latLonToWorldVec(tile.lat, tile.lon, surfR + 0.05));
     siteUpDir.copy(siteOrigin).normalize();
+    sitePosKm.copy(siteUpDir).multiplyScalar(R_MOON_KM + (tile.centerElevM * DATA.exaggeration) / 1000.0);
 
     const lonRad = THREE.MathUtils.degToRad(tile.lon);
     const latRad = THREE.MathUtils.degToRad(tile.lat);
@@ -1983,7 +2428,7 @@ const GlobalView = (() => {{
         if (currentEclipseStreak > longestEclipseHours) longestEclipseHours = currentEclipseStreak;
       }}
 
-      _dirTmp.set(EARTH_DIRS[b], EARTH_DIRS[b + 1], EARTH_DIRS[b + 2]);
+      earthDirFromSite(i, sitePosKm, _dirTmp);
       const eLocal = computeLocalAzEl(_dirTmp, siteEastDir, siteNorthDir, siteUpDir);
       if ((eLocal.elDeg + 0.95) > getHorizonAngleAtAz(eLocal.azDeg)) radioHours++;
     }}
@@ -2112,7 +2557,7 @@ const GlobalView = (() => {{
     activeDayGeo.attributes.position.needsUpdate = true;
 
     const localSun = computeLocalAzEl(_sunVec, siteEastDir, siteNorthDir, siteUpDir);
-    const localEarth = computeLocalAzEl(_earthVec, siteEastDir, siteNorthDir, siteUpDir);
+    const localEarth = computeLocalAzEl(earthDirFromSite(idx, sitePosKm, _earthSiteVec), siteEastDir, siteNorthDir, siteUpDir);
     const siteDiskPct = Math.round(computeSiteSolarDiskFraction(localSun.azDeg, localSun.elDeg) * 100);
     const dteClear = localEarth.elDeg > getHorizonAngleAtAz(localEarth.azDeg);
 
@@ -2215,6 +2660,123 @@ const GlobalView = (() => {{
 
 
 // ==============================================================================
+// ON-DEMAND TILE DATA: FULL-RESOLUTION HEIGHTS, FETCHED ONLY WHEN A SQUARE IS OPENED
+// ==============================================================================
+// Nothing is preloaded. Opening a square requests "tiles/tile_NNNN.bin" from the local
+// server started by global_viewer.py, which cuts that square out of the full-resolution
+// GeoTIFF (the same sampling slice.py uses). File layout (little-endian): 40-byte header,
+// one uint16 per mesh vertex row by row from the north-west corner, then a 16-byte header
+// and one uint16 per vertex of the coarse far-field grid (surroundings out to 300 km).
+const TileSource = (() => {{
+  const RES = DATA.tile_grid_res;
+  const HEADER_BYTES = DATA.tile_header_bytes;
+  const FAR_RES = DATA.far_res;
+  const FAR_OFFSET = HEADER_BYTES + RES * RES * 2;
+  const EXPECTED_BYTES = FAR_OFFSET + DATA.far_header_bytes + FAR_RES * FAR_RES * 2;
+  const canFetch = location.protocol === 'http:' || location.protocol === 'https:';
+  const MAX_CACHED_TILES = 8;
+  const cache = new Map();   // tile idx -> decoded tile; least recently used first
+
+  function parse(buf, tile) {{
+    if (buf.byteLength !== EXPECTED_BYTES) {{
+      throw new Error(`Kacheldatei hat ${{buf.byteLength}} statt ${{EXPECTED_BYTES}} Bytes`);
+    }}
+    const dv = new DataView(buf);
+    const magic = String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3));
+    if (magic !== 'LTIL' || dv.getUint16(4, true) !== DATA.tile_file_version) throw new Error('unbekanntes Kachelformat');
+    if (dv.getUint16(6, true) !== RES) throw new Error('Kachel hat eine andere Rasterauflösung');
+    if (dv.getUint32(8, true) !== tile.idx) throw new Error('Kachel gehört zu einem anderen Quadrat');
+    if (dv.getUint16(12, true) !== DATA.tiles_per_edge ||
+        Math.abs(dv.getFloat32(16, true) - DATA.tile_size_km) > 1e-3 ||
+        Math.abs(dv.getFloat32(20, true) - DATA.shadow_pad_km) > 1e-3) {{
+      throw new Error('Kachel wurde mit anderen Einstellungen erzeugt');
+    }}
+    // Guard against a server and a page that disagree about where a square sits.
+    const cLat = dv.getFloat32(32, true);
+    const cLon = dv.getFloat32(36, true);
+    const dLon = Math.abs(((cLon - tile.lon + 540.0) % 360.0) - 180.0) * Math.cos(THREE.MathUtils.degToRad(tile.lat));
+    if (Math.abs(cLat - tile.lat) > 0.01 || dLon > 0.01) throw new Error('Kachelzentrum passt nicht zum Quadrat');
+
+    if (dv.getUint16(FAR_OFFSET, true) !== FAR_RES ||
+        Math.abs(dv.getFloat32(FAR_OFFSET + 4, true) - DATA.far_half_km) > 1e-3) {{
+      throw new Error('Fernfeld wurde mit anderen Einstellungen erzeugt');
+    }}
+
+    return {{
+      zMin: dv.getFloat32(24, true),
+      zMax: dv.getFloat32(28, true),
+      u16: new Uint16Array(buf, HEADER_BYTES, RES * RES),
+      far: {{
+        zMin: dv.getFloat32(FAR_OFFSET + 8, true),
+        zMax: dv.getFloat32(FAR_OFFSET + 12, true),
+        u16: new Uint16Array(buf, FAR_OFFSET + DATA.far_header_bytes, FAR_RES * FAR_RES)
+      }}
+    }};
+  }}
+
+  // onProgress(stage, fraction): stage is 'request' (server is reading the GeoTIFF) or 'download'.
+  async function load(tile, onProgress) {{
+    if (cache.has(tile.idx)) {{
+      const hit = cache.get(tile.idx);
+      cache.delete(tile.idx);
+      cache.set(tile.idx, hit);
+      onProgress('download', 1.0);
+      return hit;
+    }}
+    if (!canFetch) throw new Error('Seite wurde als Datei geöffnet, nicht über global_viewer.py');
+
+    const url = `${{DATA.tile_url_prefix}}${{String(tile.idx + 1).padStart(4, '0')}}.bin`;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 60000);
+    try {{
+      onProgress('request', 0.0);
+      const resp = await fetch(url, {{ signal: ctrl.signal, cache: 'no-store' }});
+      if (!resp.ok) throw new Error(`Kachel-Server antwortet mit ${{resp.status}}`);
+
+      let buf;
+      if (resp.body && resp.body.getReader) {{
+        const reader = resp.body.getReader();
+        const bytes = new Uint8Array(EXPECTED_BYTES);
+        let got = 0;
+        for (;;) {{
+          const {{ done, value }} = await reader.read();
+          if (done) break;
+          if (got + value.length > EXPECTED_BYTES) throw new Error('Kacheldatei ist größer als erwartet');
+          bytes.set(value, got);
+          got += value.length;
+          onProgress('download', got / EXPECTED_BYTES);
+        }}
+        buf = got === EXPECTED_BYTES ? bytes.buffer : bytes.buffer.slice(0, got);
+      }} else {{
+        buf = await resp.arrayBuffer();
+      }}
+
+      const data = parse(buf, tile);
+      cache.set(tile.idx, data);
+      while (cache.size > MAX_CACHED_TILES) cache.delete(cache.keys().next().value);
+      return data;
+    }} catch (err) {{
+      if (err && err.name === 'AbortError') throw new Error('Kachel-Server antwortet nicht (60 s)');
+      if (err instanceof TypeError) throw new Error('Kachel-Server nicht erreichbar');
+      throw err;
+    }} finally {{
+      clearTimeout(timer);
+    }}
+  }}
+
+  return {{ load, canFetch }};
+}})();
+
+// Lets the browser paint (progress bar) between the heavy stages of a tile build.
+function yieldToBrowser() {{
+  return new Promise((resolve) => {{
+    const fallback = setTimeout(resolve, 60);   // rAF is paused in background tabs
+    requestAnimationFrame(() => {{ clearTimeout(fallback); resolve(); }});
+  }});
+}}
+
+
+// ==============================================================================
 // VIEW 2: MAX-DETAIL {TILE_GRID_RES}px TILE VIEW (+25 KM SHADOW BUFFER)
 // ==============================================================================
 const TileDetailView = (() => {{
@@ -2291,7 +2853,53 @@ const TileDetailView = (() => {{
   terrainMesh.receiveShadow = true;
   group.add(terrainMesh);
 
+  // ---- Far field: coarse terrain around the block, out to FAR_HALF_KM from the centre ------
+  // Never drawn: it lies outside the clip planes and writes neither colour nor depth. It casts
+  // shadows into the square and belongs to the site's horizon, because with a low Sun (near
+  // the poles always) mountains far outside the 250 km block still cover the Sun.
+  const FAR_RES = DATA.far_res;
+  const FAR_HALF_KM = DATA.far_half_km;
+  const FAR_STEP_KM = (2.0 * FAR_HALF_KM) / (FAR_RES - 1);
+  const farPositions = new Float32Array(FAR_RES * FAR_RES * 3);
+
+  const farIndexBuf = new Uint32Array((FAR_RES - 1) * (FAR_RES - 1) * 6);
+  let farIdxCount = 0;
+  for (let r = 0; r < FAR_RES - 1; r++) {{
+    const y0 = FAR_HALF_KM - r * FAR_STEP_KM;
+    const y1 = y0 - FAR_STEP_KM;
+    const rowInBlock = Math.abs(y0) <= FULL_HALF_KM && Math.abs(y1) <= FULL_HALF_KM;
+    for (let c = 0; c < FAR_RES - 1; c++) {{
+      const x0 = -FAR_HALF_KM + c * FAR_STEP_KM;
+      const x1 = x0 + FAR_STEP_KM;
+      // cells inside the block are covered by the fine mesh
+      if (rowInBlock && Math.abs(x0) <= FULL_HALF_KM && Math.abs(x1) <= FULL_HALF_KM) continue;
+      const a = r * FAR_RES + c;
+      const b = (r + 1) * FAR_RES + c;
+      const d = r * FAR_RES + (c + 1);
+      const e = (r + 1) * FAR_RES + (c + 1);
+      farIndexBuf[farIdxCount++] = a; farIndexBuf[farIdxCount++] = b; farIndexBuf[farIdxCount++] = d;
+      farIndexBuf[farIdxCount++] = b; farIndexBuf[farIdxCount++] = e; farIndexBuf[farIdxCount++] = d;
+    }}
+  }}
+  const farGeometry = new THREE.BufferGeometry();
+  farGeometry.setAttribute('position', new THREE.BufferAttribute(farPositions, 3));
+  farGeometry.setIndex(new THREE.BufferAttribute(farIndexBuf.slice(0, farIdxCount), 1));
+  const farMesh = new THREE.Mesh(farGeometry, new THREE.MeshBasicMaterial({{
+    colorWrite: false,
+    depthWrite: false,
+    clippingPlanes: tileClipPlanes,
+    clipShadows: false
+  }}));
+  farMesh.castShadow = true;
+  farMesh.receiveShadow = false;
+  farMesh.frustumCulled = false;
+  group.add(farMesh);
+
+  let farMinWorldY = -30.0;
+  let farMaxWorldY = 5.0;
+
   let currentTile = LUNAR_TILES[0];
+  let detailInfo = {{ fullRes: false, reason: '' }};
   let tileMinZ = -2000;
   let tileMaxZ = 2000;
   let minWorldY = -2.0;
@@ -2384,7 +2992,10 @@ const TileDetailView = (() => {{
         const qMax = Math.max(h00, h10, h01, h11);
         if (qMax - qMin < 1e-6) continue;
 
-        for (let l = 0; l < levels.length; l++) {{
+        // Only the levels that can cross this cell (levels[k] = firstIso + k * interval).
+        const lLo = Math.max(0, Math.floor((qMin - firstIso) / intervalMeters));
+        const lHi = Math.min(levels.length - 1, Math.ceil((qMax - firstIso) / intervalMeters));
+        for (let l = lLo; l <= lHi; l++) {{
           const isoZ = levels[l];
           if (isoZ < qMin || isoZ > qMax) continue;
           const frac = (isoZ - minM) / zRangeM;
@@ -2505,6 +3116,23 @@ const TileDetailView = (() => {{
     return (h00 * (1 - fc) + h10 * fc) * (1 - fr) + (h01 * (1 - fc) + h11 * fc) * fr;
   }}
 
+  // World height (km above the tangent plane at the centre) of the far-field surface, or null
+  // outside it. World x/z are distances in the tangent plane; the far grid is laid out by arc
+  // length from the centre, hence the asin().
+  function getFarWorldHeightAt(wx, wz) {{
+    const rhoW = Math.hypot(wx, wz);
+    const k = rhoW > 1e-6 ? (R_MOON_KM * Math.asin(Math.min(1.0, rhoW / R_MOON_KM))) / rhoW : 1.0;
+    const cF = (wx * k + FAR_HALF_KM) / FAR_STEP_KM;
+    const rF = (wz * k + FAR_HALF_KM) / FAR_STEP_KM;
+    if (!(cF >= 0 && rF >= 0 && cF <= FAR_RES - 1 && rF <= FAR_RES - 1)) return null;
+    const c0 = Math.min(FAR_RES - 2, cF | 0), r0 = Math.min(FAR_RES - 2, rF | 0);
+    const fc = cF - c0, fr = rF - r0;
+    const i00 = (r0 * FAR_RES + c0) * 3 + 1;
+    const i01 = i00 + FAR_RES * 3;
+    return (farPositions[i00] * (1 - fc) + farPositions[i00 + 3] * fc) * (1 - fr) +
+           (farPositions[i01] * (1 - fc) + farPositions[i01 + 3] * fc) * fr;
+  }}
+
   const normalEps = (FULL_SIZE_KM / (RES - 1)) * 0.5;
   function getSmoothNormalAt(wx, wz, targetVec) {{
     const hL = getWorldHeightAt(Math.max(-FULL_HALF_KM, wx - normalEps), wz);
@@ -2542,18 +3170,10 @@ const TileDetailView = (() => {{
   group.add(sunLight);
   group.add(sunLight.target);
 
-  const _aabbCorners = [
-    new THREE.Vector3(-FULL_HALF_KM, -15, -FULL_HALF_KM),
-    new THREE.Vector3( FULL_HALF_KM, -15, -FULL_HALF_KM),
-    new THREE.Vector3(-FULL_HALF_KM,  15, -FULL_HALF_KM),
-    new THREE.Vector3( FULL_HALF_KM,  15, -FULL_HALF_KM),
-    new THREE.Vector3(-FULL_HALF_KM, -15,  FULL_HALF_KM),
-    new THREE.Vector3( FULL_HALF_KM, -15,  FULL_HALF_KM),
-    new THREE.Vector3(-FULL_HALF_KM,  15,  FULL_HALF_KM),
-    new THREE.Vector3( FULL_HALF_KM,  15,  FULL_HALF_KM),
-  ];
   const _cornerTmp = new THREE.Vector3();
 
+  // Shadow camera: sideways it only has to cover the visible square (keeps the shadow map
+  // sharp); in depth it must reach every caster, including the far field towards the Sun.
   function fitShadowFrustumToTerrain() {{
     sunLight.updateMatrixWorld();
     sunLight.target.updateMatrixWorld();
@@ -2569,12 +3189,25 @@ const TileDetailView = (() => {{
     let minY = Infinity, maxY = -Infinity;
     let minZ = Infinity, maxZ = -Infinity;
 
-    for (let i = 0; i < 8; i++) {{
-      _cornerTmp.copy(_aabbCorners[i]).applyMatrix4(viewMat);
-      if (_cornerTmp.x < minX) minX = _cornerTmp.x;
-      if (_cornerTmp.x > maxX) maxX = _cornerTmp.x;
-      if (_cornerTmp.y < minY) minY = _cornerTmp.y;
-      if (_cornerTmp.y > maxY) maxY = _cornerTmp.y;
+    // receivers: the visible square
+    const recLoY = minWorldY - 0.5, recHiY = maxWorldY + 0.5;
+    // casters: fine block + far field
+    const casLoY = Math.min(minWorldY, farMinWorldY) - 0.5, casHiY = Math.max(maxWorldY, farMaxWorldY) + 0.5;
+
+    for (let i = 0; i < 16; i++) {{
+      const isCaster = i >= 8;
+      const half = isCaster ? FAR_HALF_KM : VIS_HALF_KM;
+      _cornerTmp.set(
+        (i & 1) ? half : -half,
+        (i & 2) ? (isCaster ? casHiY : recHiY) : (isCaster ? casLoY : recLoY),
+        (i & 4) ? half : -half
+      ).applyMatrix4(viewMat);
+      if (!isCaster) {{
+        if (_cornerTmp.x < minX) minX = _cornerTmp.x;
+        if (_cornerTmp.x > maxX) maxX = _cornerTmp.x;
+        if (_cornerTmp.y < minY) minY = _cornerTmp.y;
+        if (_cornerTmp.y > maxY) maxY = _cornerTmp.y;
+      }}
       if (_cornerTmp.z < minZ) minZ = _cornerTmp.z;
       if (_cornerTmp.z > maxZ) maxZ = _cornerTmp.z;
     }}
@@ -2588,6 +3221,8 @@ const TileDetailView = (() => {{
     shadowCam.near = Math.max(1.0, -maxZ - 5.0);
     shadowCam.far = Math.max(shadowCam.near + 10.0, -minZ + 5.0);
     shadowCam.updateProjectionMatrix();
+    // constant depth bias of about 80 m, whatever the depth range is
+    sunLight.shadow.bias = -0.08 / (shadowCam.far - shadowCam.near);
   }}
 
   const skyRadius = 155.0;
@@ -2656,23 +3291,42 @@ const TileDetailView = (() => {{
   );
   group.add(earthTrail);
 
-  function loadTile(tile) {{
+  // hiRes: full-resolution heights from TileSource.load(), or null. Without them the square
+  // is filled from the coarse global grid (the only thing the page itself carries).
+  // fallbackReason: why hiRes is missing (shown in the HUD). onProgress(fraction, stageText).
+  async function loadTile(tile, hiRes = null, fallbackReason = '', onProgress = () => {{}}) {{
     currentTile = tile;
+    detailInfo = hiRes
+      ? {{ fullRes: true, reason: '' }}
+      : {{ fullRes: false, reason: fallbackReason || 'keine Detaildaten geladen' }};
     const basis = tile.basis;
     const r0Km = R_MOON_KM + (tile.centerElevM * DATA.exaggeration) / 1000.0;
     const p0Moon = basis.up.clone().multiplyScalar(r0Km);
 
+    const hiHeights = hiRes ? hiRes.u16 : null;
+    const hiMinM = hiRes ? hiRes.zMin : 0.0;
+    const hiStepM = hiRes ? (hiRes.zMax - hiRes.zMin) / 65535.0 : 0.0;
+
     let localMinZ = Infinity;
     let localMaxZ = -Infinity;
 
+    onProgress(0.0, 'Gelände wird aufgebaut …');
+    await yieldToBrowser();
+
     for (let r = 0; r < RES; r++) {{
+      if (r > 0 && (r & 63) === 0) {{
+        onProgress(0.45 * (r / RES), 'Gelände wird aufgebaut …');
+        await yieldToBrowser();
+      }}
       const yKm = FULL_HALF_KM - (r / (RES - 1)) * FULL_SIZE_KM;
       for (let c = 0; c < RES; c++) {{
         const xKm = -FULL_HALF_KM + (c / (RES - 1)) * FULL_SIZE_KM;
         const idx = r * RES + c;
         const u = tileKmToMoonUnit(basis, xKm, yKm);
         const {{ latDeg, lonDeg }} = moonUnitToLatLon(u);
-        const zM = getElevationMetersAtLatLon(latDeg, lonDeg);
+        const zM = hiHeights
+          ? hiMinM + hiHeights[idx] * hiStepM
+          : getElevationMetersAtLatLon(latDeg, lonDeg);
 
         Z_KM[idx] = zM / 1000.0;
         LATS_ARR[idx] = latDeg;
@@ -2707,6 +3361,47 @@ const TileDetailView = (() => {{
     tileMaxZ = localMaxZ;
     const zSpan = Math.max(1.0, tileMaxZ - tileMinZ);
 
+    // Far field: from the tile file, or from the coarse globe grid when there is no file.
+    const farHeights = hiRes && hiRes.far ? hiRes.far.u16 : null;
+    const farMinM = farHeights ? hiRes.far.zMin : 0.0;
+    const farStepM = farHeights ? (hiRes.far.zMax - hiRes.far.zMin) / 65535.0 : 0.0;
+    let fMinY = Infinity, fMaxY = -Infinity;
+    for (let r = 0; r < FAR_RES; r++) {{
+      if ((r & 127) === 0) {{
+        onProgress(0.46 + 0.14 * (r / FAR_RES), 'Umland bis 300 km (Fernfeld-Schatten) …');
+        await yieldToBrowser();
+      }}
+      const yKm = FAR_HALF_KM - r * FAR_STEP_KM;
+      for (let c = 0; c < FAR_RES; c++) {{
+        const xKm = -FAR_HALF_KM + c * FAR_STEP_KM;
+        const i = r * FAR_RES + c;
+        const u = tileKmToMoonUnit(basis, xKm, yKm);
+        let zM;
+        if (farHeights) {{
+          zM = farMinM + farHeights[i] * farStepM;
+        }} else {{
+          const ll = moonUnitToLatLon(u);
+          zM = getElevationMetersAtLatLon(ll.latDeg, ll.lonDeg);
+        }}
+        const rKm = R_MOON_KM + (zM * DATA.exaggeration) / 1000.0;
+        const dx = u.x * rKm - p0Moon.x;
+        const dy = u.y * rKm - p0Moon.y;
+        const dz = u.z * rKm - p0Moon.z;
+        const wy = dx * basis.up.x + dy * basis.up.y + dz * basis.up.z;
+        farPositions[i * 3] = dx * basis.east.x + dy * basis.east.y + dz * basis.east.z;
+        farPositions[i * 3 + 1] = wy;
+        farPositions[i * 3 + 2] = -(dx * basis.north.x + dy * basis.north.y + dz * basis.north.z);
+        if (wy < fMinY) fMinY = wy;
+        if (wy > fMaxY) fMaxY = wy;
+      }}
+    }}
+    farMinWorldY = fMinY;
+    farMaxWorldY = fMaxY;
+    farGeometry.attributes.position.needsUpdate = true;
+
+    onProgress(0.62, 'Farben und Flächennormalen …');
+    await yieldToBrowser();
+
     minWorldY = Infinity;
     maxWorldY = -Infinity;
     for (let i = 0; i < NUM_VERTS; i++) {{
@@ -2728,6 +3423,9 @@ const TileDetailView = (() => {{
 
     geometry.attributes.position.needsUpdate = true;
     geometry.computeVertexNormals();
+
+    onProgress(0.72, 'Horizont und Jahresbilanz 2027 …');
+    await yieldToBrowser();
 
     centerWorldY = getWorldHeightAt(0, 0);
     centerPinGroup.position.set(0, centerWorldY, 0);
@@ -2752,10 +3450,16 @@ const TileDetailView = (() => {{
       sunSkyPositions[b + 1] = sUp * skyRadius;
       sunSkyPositions[b + 2] = -sNorth * skyRadius;
 
-      const exM = EARTH_DIRS[b], eyM = -EARTH_DIRS[b + 2], ezM = EARTH_DIRS[b + 1];
+      // Earth as seen from the centre of this square, not from the Moon's centre (parallax).
+      const eDist = EARTH_DIST_KM[i];
+      let exM = EARTH_DIRS[b] * eDist - p0Moon.x;
+      let eyM = -EARTH_DIRS[b + 2] * eDist - p0Moon.y;
+      let ezM = EARTH_DIRS[b + 1] * eDist - p0Moon.z;
+      const eLen = Math.hypot(exM, eyM, ezM);
+      exM /= eLen; eyM /= eLen; ezM /= eLen;
       const eEast = exM * basis.east.x + eyM * basis.east.y + ezM * basis.east.z;
       const eNorth = exM * basis.north.x + eyM * basis.north.y + ezM * basis.north.z;
-      const eUp = exM * basis.up.x + eyM * basis.up.y + szM * basis.up.z;
+      const eUp = exM * basis.up.x + eyM * basis.up.y + ezM * basis.up.z;
 
       tileEarthDirs[b] = eEast;
       tileEarthDirs[b + 1] = eUp;
@@ -2778,21 +3482,24 @@ const TileDetailView = (() => {{
     annualSunGeo.attributes.position.needsUpdate = true;
     earthTrailGeo.attributes.position.needsUpdate = true;
 
-    const stepDist = 0.5;
-    const maxSteps = Math.floor(FULL_HALF_KM / stepDist);
+    // Horizon of the site at the centre: fine steps through the block, then on through the
+    // far field to its edge. World heights are true 3D, so the Moon's curvature is included.
+    const nearStepKm = 0.5;
     for (let deg = 0; deg < 360; deg++) {{
       const azRad = THREE.MathUtils.degToRad(deg);
       const dx = Math.sin(azRad);
       const dz = -Math.cos(azRad);
       let maxAng = -90.0;
-      for (let s = 2; s <= maxSteps; s++) {{
-        const d = s * stepDist;
+      let d = 2 * nearStepKm;
+      for (;;) {{
         const wx = dx * d;
         const wz = dz * d;
-        if (Math.abs(wx) > FULL_HALF_KM || Math.abs(wz) > FULL_HALF_KM) break;
-        const wy = getWorldHeightAt(wx, wz);
+        const inBlock = Math.abs(wx) <= FULL_HALF_KM && Math.abs(wz) <= FULL_HALF_KM;
+        const wy = inBlock ? getWorldHeightAt(wx, wz) : getFarWorldHeightAt(wx, wz);
+        if (wy === null) break;
         const ang = THREE.MathUtils.radToDeg(Math.atan2(wy - centerWorldY, d));
         if (ang > maxAng) maxAng = ang;
+        d += inBlock ? nearStepKm : FAR_STEP_KM;
       }}
       horizonProfile[deg] = maxAng;
     }}
@@ -2827,7 +3534,11 @@ const TileDetailView = (() => {{
       maxEclipse: `${{longestEclipseHours}} h`
     }};
 
+    onProgress(0.88, 'Höhenlinien …');
+    await yieldToBrowser();
+
     rebuildSurfaceContours(currentContourInterval);
+    onProgress(1.0, 'Fertig');
   }}
 
   function getHorizonAngleAtAz(azDeg) {{
@@ -2858,13 +3569,25 @@ const TileDetailView = (() => {{
 
   const gridMarchStep = (FULL_SIZE_KM / (RES - 1)) * 0.45;
   function isTerrainOccluded(ox, oy, oz, dx, dy, dz, maxDist) {{
-    for (let t = gridMarchStep; t < maxDist; t += gridMarchStep) {{
+    const topY = Math.max(maxWorldY, farMaxWorldY);
+    let t = gridMarchStep;
+    // fine block
+    for (; t < maxDist; t += gridMarchStep) {{
       const px = ox + dx * t;
       const pz = oz + dz * t;
-      if (px < -FULL_HALF_KM || px > FULL_HALF_KM || pz < -FULL_HALF_KM || pz > FULL_HALF_KM) return false;
+      if (px < -FULL_HALF_KM || px > FULL_HALF_KM || pz < -FULL_HALF_KM || pz > FULL_HALF_KM) break;
       const py = oy + dy * t;
-      if (dy >= 0 && py > maxWorldY) return false;
+      if (dy >= 0 && py > topY) return false;
       if (py <= getWorldHeightAt(px, pz)) return true;
+    }}
+    // far field beyond the block
+    const farMarchStep = FAR_STEP_KM * 0.5;
+    for (; t < maxDist; t += farMarchStep) {{
+      const py = oy + dy * t;
+      if (dy >= 0 && py > topY) return false;
+      const h = getFarWorldHeightAt(ox + dx * t, oz + dz * t);
+      if (h === null) return false;
+      if (py <= h) return true;
     }}
     return false;
   }}
@@ -2989,7 +3712,8 @@ const TileDetailView = (() => {{
     const eEl = THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(tileEarthDirs[baseIdx + 1], -1, 1)));
 
     sunMarker.position.set(sx, sy, sz);
-    sunLight.position.set(sx * 1.6, sy * 1.6, sz * 1.6);
+    // far enough out that the whole far field lies in front of the shadow camera
+    sunLight.position.set(sx, sy, sz).multiplyScalar((FAR_HALF_KM * 2.4) / skyRadius);
 
     currentTwilightFactor = THREE.MathUtils.smoothstep(sEl, -2.5, 1.5);
     if (mapMode === 'shadow' && group.visible) {{
@@ -3057,7 +3781,7 @@ const TileDetailView = (() => {{
       const ox = worldPt.x + smoothNormal.x * 0.25;
       const oy = worldPt.y + smoothNormal.y * 0.25;
       const oz = worldPt.z + smoothNormal.z * 0.25;
-      const maxRayDist = FULL_SIZE_KM * 1.45;
+      const maxRayDist = FAR_HALF_KM * 1.5;
 
       for (let i = 0; i < 7; i++) {{
         _sampleDir.copy(_sunDir);
@@ -3114,6 +3838,8 @@ const TileDetailView = (() => {{
     approachCamPos,
     loadTile,
     getTile: () => currentTile,
+    getDetailInfo: () => detailInfo,
+    GRID_SPACING_M: (FULL_SIZE_KM / (RES - 1)) * 1000.0,
     getMinZ: () => tileMinZ,
     getMaxZ: () => tileMaxZ,
     getMapMode: () => mapMode,
@@ -3150,6 +3876,8 @@ const transition = {{
   elapsed: 0,
   duration: 1.35,
   midpointSwitched: false,
+  holding: false,            // true while the opened square is being fetched and built
+  tileDataPromise: null,     // resolves to {{ data, error }} for the opened square
   targetTileIdx: 0,
   startCamPos: new THREE.Vector3(),
   startTarget: new THREE.Vector3(),
@@ -3161,6 +3889,46 @@ const transition = {{
 
 const transitionVeil = document.getElementById('transition-veil');
 const transitionLabel = document.getElementById('transition-label');
+
+// Loading bar shown on the veil while a square is fetched and built.
+// 0-45 %: server reads the GeoTIFF, 45-65 %: download, 65-100 %: mesh, horizon, contours.
+const tileProgress = (() => {{
+  const wrapEl = document.getElementById('tile-progress');
+  const fillEl = document.getElementById('tile-progress-fill');
+  const stageEl = document.getElementById('tile-progress-stage');
+  const pctEl = document.getElementById('tile-progress-pct');
+  let shown = 0;
+  let creepTimer = null;
+
+  function set(frac, stageText) {{
+    shown = Math.max(shown, Math.min(1, frac));   // never runs backwards
+    fillEl.style.width = `${{(shown * 100).toFixed(1)}}%`;
+    pctEl.textContent = `${{Math.round(shown * 100)}}%`;
+    if (stageText) stageEl.textContent = stageText;
+  }}
+  function stopCreep() {{
+    if (creepTimer !== null) {{ clearInterval(creepTimer); creepTimer = null; }}
+  }}
+  return {{
+    start(stageText) {{
+      stopCreep();
+      shown = 0;
+      wrapEl.style.display = 'block';
+      set(0, stageText);
+    }},
+    // The server gives no progress while it reads the GeoTIFF, so the bar approaches 45 % slowly.
+    waitForServer(stageText) {{
+      stopCreep();
+      const t0 = performance.now();
+      set(0.02, stageText);
+      creepTimer = setInterval(() => {{
+        set(0.02 + 0.43 * (1 - Math.exp(-(performance.now() - t0) / 2500)));
+      }}, 100);
+    }},
+    set(frac, stageText) {{ stopCreep(); set(frac, stageText); }},
+    hide() {{ stopCreep(); wrapEl.style.display = 'none'; }}
+  }};
+}})();
 
 const initGlobalCamDir = GlobalView.latLonToWorldVec(-48.0, 20.0, 1.0);
 camera.position.copy(initGlobalCamDir).multiplyScalar(GlobalView.R_MOON_W * 2.95);
@@ -3335,7 +4103,14 @@ function syncHUDForScope() {{
     `;
     statMidLblEl.innerHTML = 'Annual<br/>Radio (DTE)';
     statMidValEl.style.color = '#00f5d4';
-    siteHintEl.innerHTML = 'Maximal detailgetreues {TILE_GRID_RES}px-Mesh mit 250×250 km Schatten-Puffer.';
+    const detail = TileDetailView.getDetailInfo();
+    if (detail.fullRes) {{
+      siteHintEl.innerHTML = `Volle LDEM64-Auflösung: ${{DATA.tile_grid_res}}×${{DATA.tile_grid_res}} Punkte, ` +
+        `${{TileDetailView.GRID_SPACING_M.toFixed(0)}} m Raster. Schatten und Horizont rechnen mit dem Umland bis ${{DATA.far_half_km.toFixed(0)}} km.`;
+    }} else {{
+      siteHintEl.innerHTML = `<span style="color:#ffa94d;"><b>⚠ Nur grobe Globus-Daten</b> (${{detail.reason}}).</span> ` +
+        'Für die volle Auflösung <code>python global_viewer.py</code> starten und die Seite über die dort angezeigte Adresse öffnen.';
+    }}
 
     drawPowerStrip(TileDetailView.hourlySunLit);
     updateLegend('tile', activeMode);
@@ -3418,9 +4193,8 @@ function applyEphemerisStep(stepIdx) {{
 function easeInCubic(t) {{ return t * t * t; }}
 function easeOutCubic(t) {{ return 1 - Math.pow(1 - t, 3); }}
 
+// The tile itself is loaded and built by finishTileLoad() before this runs.
 function activateTileScope(tileIdx) {{
-  const tile = LUNAR_TILES[tileIdx];
-  TileDetailView.loadTile(tile);
   TileDetailView.setMapMode(GlobalView.getMapMode());
 
   viewScope = 'tile';
@@ -3491,6 +4265,48 @@ function startTransitionToTile(tileIdx) {{
 
   transitionLabel.textContent = `Lade Max-Detail Quadrat ${{tile.idLabel}} (${{Math.abs(tile.lat).toFixed(1)}}° ${{latDir}}, ${{Math.abs(tile.lon).toFixed(1)}}° ${{lonDir}})...`;
   controls.enabled = false;
+
+  // Start fetching right away; the camera flight towards the square runs meanwhile.
+  transition.holding = false;
+  tileProgress.start('Höhendaten werden angefordert …');
+  transition.tileDataPromise = TileSource.load(tile, (stage, frac) => {{
+    if (stage === 'request') tileProgress.waitForServer('Quadrat wird aus dem LDEM64-Raster gelesen …');
+    else tileProgress.set(0.45 + 0.20 * frac, 'Höhendaten werden übertragen …');
+  }}).then(
+    (data) => ({{ data, error: null }}),
+    (error) => ({{ data: null, error }})
+  );
+}}
+
+// Runs while the veil is closed: waits for the data, builds the tile, then lets the flight continue.
+async function finishTileLoad(tileIdx) {{
+  const tile = LUNAR_TILES[tileIdx];
+  const {{ data, error }} = await transition.tileDataPromise;
+  transition.tileDataPromise = null;
+  if (error) console.warn(`Quadrat ${{tile.idLabel}}: keine Detaildaten (${{error.message}}); zeige grobe Globus-Daten.`);
+
+  try {{
+    await TileDetailView.loadTile(
+      tile, data, error ? error.message : '',
+      (frac, stageText) => tileProgress.set(0.65 + 0.35 * frac, stageText)
+    );
+  }} catch (err) {{
+    // Never leave the page stuck behind the veil: return to the globe.
+    console.error(err);
+    tileProgress.hide();
+    transition.holding = false;
+    transition.active = false;
+    transitionVeil.style.opacity = '0';
+    camera.position.copy(transition.savedGlobalCamPos);
+    controls.target.copy(transition.savedGlobalTarget);
+    controls.enabled = true;
+    controls.update();
+    return;
+  }}
+
+  activateTileScope(tileIdx);
+  tileProgress.hide();
+  transition.holding = false;
 }}
 
 function startTransitionToGlobal() {{
@@ -3523,7 +4339,7 @@ function startTransitionToGlobal() {{
 }}
 
 function updateTransition(dtSec) {{
-  if (!transition.active) return;
+  if (!transition.active || transition.holding) return;
 
   transition.elapsed += dtSec;
   const rawT = Math.min(1.0, transition.elapsed / transition.duration);
@@ -3540,8 +4356,13 @@ function updateTransition(dtSec) {{
       transitionVeil.style.opacity = veilAlpha.toFixed(3);
     }} else {{
       if (!transition.midpointSwitched) {{
+        // Veil is closed. Hold the flight here until the square is loaded and built.
         transition.midpointSwitched = true;
-        activateTileScope(transition.targetTileIdx);
+        transition.holding = true;
+        transition.elapsed = split * transition.duration;
+        transitionVeil.style.opacity = '1';
+        finishTileLoad(transition.targetTileIdx);
+        return;
       }}
       const u = easeOutCubic((rawT - split) / (1.0 - split));
       camera.position.lerpVectors(TileDetailView.approachCamPos, TileDetailView.defaultCamPos, u);
@@ -3877,4 +4698,103 @@ animate(performance.now());
 
 Path(OUTPUT_HTML).write_text(html_template, encoding="utf-8")
 print(f"Tiered Global Globe + {total_tiles_count:,} x (200x200 km, {TILE_GRID_RES}px) Tiles saved to '{OUTPUT_HTML}'")
-webbrowser.open(Path(OUTPUT_HTML).resolve().as_uri())
+
+
+# ==============================================================================
+# 7. LOCAL SERVER: SERVES THE PAGE + CUTS FULL-RESOLUTION TILES ON DEMAND
+# ==============================================================================
+_TILE_URL_RE = re.compile(r"/" + re.escape(TILE_CACHE_DIR) + r"/tile_(\d{4})\.bin")
+
+
+class ViewerRequestHandler(BaseHTTPRequestHandler):
+    server_version = "LunarTileServer/1.0"
+
+    def _send(self, status: int, body: bytes, content_type: str):
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
+    def do_GET(self):
+        path = urllib.parse.urlsplit(self.path).path
+
+        if path in ("/", "/index.html", "/" + OUTPUT_HTML):
+            self._send(200, Path(OUTPUT_HTML).read_bytes(), "text/html; charset=utf-8")
+            return
+
+        tile_match = _TILE_URL_RE.fullmatch(path)
+        if tile_match:
+            tile_idx = int(tile_match.group(1)) - 1
+            if not 0 <= tile_idx < TOTAL_TILES:
+                self._send(404, b"unknown tile", "text/plain; charset=utf-8")
+                return
+            t_start = datetime.now()
+            try:
+                blob, from_cache = get_tile_bytes(tile_idx)
+            except Exception as exc:  # report to the page instead of dropping the connection
+                print(f"  Quadrat #{tile_idx + 1:04d}: FEHLER beim Lesen aus dem GeoTIFF ({exc})")
+                self._send(500, str(exc).encode("utf-8", "replace"), "text/plain; charset=utf-8")
+                return
+            dt = (datetime.now() - t_start).total_seconds()
+            origin = "aus Cache" if from_cache else f"aus {Path(global_tif_path).name} geschnitten"
+            print(f"  Quadrat #{tile_idx + 1:04d}: {origin} ({dt:.2f} s, {len(blob) / 1024:.0f} kB)")
+            self._send(200, blob, "application/octet-stream")
+            return
+
+        if path.startswith("/" + VENDOR_DIR + "/"):
+            vendor_root = Path(VENDOR_DIR).resolve()
+            target = (vendor_root / urllib.parse.unquote(path[len(VENDOR_DIR) + 2:])).resolve()
+            if vendor_root in target.parents and target.is_file():
+                mime = "text/javascript; charset=utf-8" if target.suffix in (".js", ".mjs") else "application/octet-stream"
+                self._send(200, target.read_bytes(), mime)
+                return
+
+        self._send(404, b"not found", "text/plain; charset=utf-8")
+
+    do_HEAD = do_GET
+
+    def log_message(self, fmt, *args):  # keep the terminal quiet; tiles are logged above
+        pass
+
+
+class ViewerServer(ThreadingHTTPServer):
+    daemon_threads = True
+    # On Windows SO_REUSEADDR would let a second server grab a port that is already in use.
+    allow_reuse_address = os.name != "nt"
+
+
+def run_viewer_server(first_port: int):
+    httpd = None
+    for port in range(first_port, first_port + 20):
+        try:
+            httpd = ViewerServer((SERVER_HOST, port), ViewerRequestHandler)
+            break
+        except OSError:
+            continue
+    if httpd is None:
+        raise RuntimeError(f"Kein freier Port zwischen {first_port} und {first_port + 19}.")
+
+    url = f"http://{SERVER_HOST}:{httpd.server_address[1]}/"
+    print()
+    print(f"Viewer läuft auf {url}")
+    print(f"Quadrate werden beim Öffnen in voller Auflösung aus '{global_tif_path}' geschnitten")
+    print(f"und in '{TILE_CACHE_DIR}/' abgelegt. Dieses Fenster offen lassen, Strg+C beendet den Server.")
+    if not CLI_ARGS.no_browser:
+        webbrowser.open(url)
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nServer beendet.")
+    finally:
+        httpd.server_close()
+
+
+if CLI_ARGS.no_server:
+    print("Ohne Server gestartet: Quadrate erscheinen nur in der groben Auflösung des Globus.")
+    if not CLI_ARGS.no_browser:
+        webbrowser.open(Path(OUTPUT_HTML).resolve().as_uri())
+else:
+    run_viewer_server(CLI_ARGS.port)
