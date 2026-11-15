@@ -107,3 +107,19 @@ export function inertialSky(ms) {
     icrsToScene: Q,
   };
 }
+
+/**
+ * Sun and Earth as seen from one site on the Moon, for a UTC time in milliseconds.
+ * latDeg: planetocentric latitude, lonDeg: east longitude (Moon body-fixed frame of moonBodyMatrix).
+ * subSolar, subEarth: [lat, lon] in degrees, lon 0-360 E. sunElevDeg, earthElevDeg: elevation of the
+ * disc centre above the horizon of the smooth sphere (radius MOON_RADIUS_KM): no terrain, no refraction.
+ * The Earth is taken from the site (parallax up to 0.26 deg); for the Sun the difference is negligible.
+ */
+export function siteSky(ms, latDeg, lonDeg) {
+  const k = lunarSky(ms), la = rad(latDeg), lo = rad(lonDeg), deg = x => x * 180 / Math.PI;
+  const p = [Math.cos(la) * Math.sin(lo), Math.sin(la), Math.cos(la) * Math.cos(lo)];   // scene axes of lunarSky
+  const sub = v => [deg(Math.asin(v[1])), (deg(Math.atan2(v[0], v[2])) + 360) % 360];
+  const elev = v => deg(Math.asin(Math.max(-1, Math.min(1, p[0] * v[0] + p[1] * v[1] + p[2] * v[2]))));
+  const e = unit(k.earth.map((c, i) => c * k.earthDistKm - p[i] * MOON_RADIUS_KM));
+  return { subSolar: sub(k.sun), subEarth: sub(k.earth), sunElevDeg: elev(k.sun), earthElevDeg: elev(e) };
+}

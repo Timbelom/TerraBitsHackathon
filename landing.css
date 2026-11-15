@@ -57,12 +57,30 @@ body.side-drag,body.side-drag *{transition:none!important;cursor:col-resize!impo
 .phead{display:flex;align-items:baseline;gap:calc(var(--u) * 1.2);min-height:calc(var(--u) * 4.6);font-size:calc(var(--u) * 3);font-weight:500;line-height:1.2;color:var(--text)}
 .phead small{font-size:calc(var(--u) * 1.8);font-weight:400;color:var(--text-muted)}
 .phead output{margin-left:auto;font-size:calc(var(--u) * 4);font-weight:600;line-height:1;font-variant-numeric:tabular-nums}
-.pitem input[type=text],.pitem input[type=date]{flex:1;min-width:0;width:100%;height:calc(var(--u) * 8.5);padding:0 calc(var(--u) * 1.8);background:var(--field);border:1px solid transparent;border-radius:var(--r-outer);outline:0;color:var(--text);font:400 calc(var(--u) * 2.7) var(--font-ui);font-variant-numeric:tabular-nums;transition:border-color var(--t-fast),background var(--t-fast)}
+.pitem input[type=text],.pitem input[type=date],.pitem input[type=time],.pitem input[type=number]{flex:1;min-width:0;width:100%;height:calc(var(--u) * 8.5);padding:0 calc(var(--u) * 1.8);background:var(--field);border:1px solid transparent;border-radius:var(--r-outer);outline:0;color:var(--text);font:400 calc(var(--u) * 2.7) var(--font-ui);font-variant-numeric:tabular-nums;transition:border-color var(--t-fast),background var(--t-fast)}
 .pitem>input[type=text]{flex:none}
-.pitem input[type=text]:hover,.pitem input[type=date]:hover{background:rgb(255 255 255 / .12)}
-.pitem input[type=text]:focus-visible,.pitem input[type=date]:focus-visible{border-color:var(--accent)}
+.pitem input[type=text]:hover,.pitem input[type=date]:hover,.pitem input[type=time]:hover,.pitem input[type=number]:hover{background:rgb(255 255 255 / .12)}
+.pitem input[type=text]:focus-visible,.pitem input[type=date]:focus-visible,.pitem input[type=time]:focus-visible,.pitem input[type=number]:focus-visible{border-color:var(--accent)}
 .pitem input[aria-invalid="true"]{border-color:#ff6b5e}
-.pitem input[type=date]::-webkit-calendar-picker-indicator{opacity:.7;cursor:pointer;margin:0}
+.pitem input[type=date]::-webkit-calendar-picker-indicator,.pitem input[type=time]::-webkit-calendar-picker-indicator{opacity:.7;cursor:pointer;margin:0}
+/* Time span block: heading, then Start and Stop as groups (sub-heading, date box, time box below it), then
+   the running time as heading of the playback row: Play/Pause and three speed buttons. Breaks between the groups are spacing only. */
+.ptime{gap:calc(var(--u) * 2.4)}
+.pgroup{display:flex;flex-direction:column;gap:calc(var(--u) * .8);min-width:0}
+.psub{font-size:calc(var(--u) * 2.4);font-weight:500;line-height:1.2;color:var(--text)}
+.pitem .pgroup>input{flex:none}
+/* Speed buttons beside Play/Pause: one may be on (filled), none = standard pace */
+.pspeed{flex:1;min-width:0;height:calc(var(--u) * 8.5);min-height:var(--hit);padding:0;background:var(--field);border:1px solid transparent;border-radius:var(--r-outer);color:var(--text);font:500 calc(var(--u) * 2.5) var(--font-ui);font-variant-numeric:tabular-nums;cursor:pointer;transition:border-color var(--t-fast),background var(--t-fast),color var(--t-fast)}
+.pspeed:hover{background:rgb(255 255 255 / .14)}
+.pspeed[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.pspeed:focus-visible{border-color:var(--accent);outline:2px solid var(--accent);outline-offset:2px}
+/* Play/Pause and the simulated time it runs */
+.pplay{flex:none;display:grid;place-items:center;width:calc(var(--u) * 8.5);min-width:var(--hit);height:calc(var(--u) * 8.5);min-height:var(--hit);padding:0;background:var(--field);border:1px solid transparent;border-radius:var(--r-outer);color:var(--text);cursor:pointer;transition:border-color var(--t-fast),background var(--t-fast)}
+.pplay:hover{background:rgb(255 255 255 / .14)}
+.pplay:focus-visible{border-color:var(--accent);outline:0}
+.pplay svg{width:calc(var(--u) * 2.6);height:calc(var(--u) * 2.6)}
+.pplay[aria-pressed="true"] .i-play,.pplay[aria-pressed="false"] .i-pause{display:none}
+.pnow{white-space:nowrap;font-size:calc(var(--u) * 2.7);font-weight:500;font-variant-numeric:tabular-nums;color:var(--text)}
 .pcopy{flex:none;align-self:center;margin-left:auto;padding:calc(var(--u) * .6) calc(var(--u) * 1.4);background:var(--field);border:1px solid transparent;border-radius:var(--r-outer);color:var(--text);font:500 calc(var(--u) * 1.9) var(--font-ui);cursor:pointer;transition:border-color var(--t-fast),background var(--t-fast)}
 .pcopy:hover{background:rgb(255 255 255 / .14)}
 .pcopy:focus-visible,.pcopy.done{border-color:var(--accent);outline:0}

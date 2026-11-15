@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createPins } from './landing-pins.js';
 import { createSearch } from './landing-search.js';
+import { createCards } from './landing-cards.js';
 import { inertialSky, SIDEREAL_DAYS, DAY_MS, MOON_RADIUS_KM, EARTH_RADIUS_KM, SUN_RADIUS_KM, AU_KM } from './lunar-sky.js';
 
 const world = document.getElementById('world');
@@ -263,27 +264,20 @@ pivot.add(sun, earth);
 
 // Paths: the Earth's orbit around the Moon (one sidereal month) and the Sun's yearly path.
 function path(fn, periodDays, color, opacity, t0) {
-  const pts = [];
-  for (let i = 0; i <= 360; i++) pts.push(new THREE.Vector3(...fn(inertialSky(t0 + (i / 360) * periodDays * DAY_MS))));
-  return new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color, transparent: true, opacity }));
+  const points = t => { const pts = []; for (let i = 0; i <= 360; i++) pts.push(new THREE.Vector3(...fn(inertialSky(t + (i / 360) * periodDays * DAY_MS)))); return pts; };
+  const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points(t0)), new THREE.LineBasicMaterial({ color, transparent: true, opacity }));
+  l.userData.retime = t => l.geometry.setFromPoints(points(t));     // the path from another moment on
+  return l;
 }
 const scaled = (v, k) => [v[0] * k, v[1] * k, v[2] * k];
-// Start view: Moon in front, Sun far behind it on the left, Earth far behind it on the right.
-// We start at the next moment when the Sun stands 60 degrees ahead of the Earth as seen from the
-// Moon, and turn the space once so both are in the frame. After that nothing turns by itself:
-// the Earth moves on along its orbit (behind the Moon and out of the frame), the Sun hardly moves.
+// The clock starts at the Start date and time of the sidebar (UTC); every body stands where it is at
+// that moment. The space is turned once so the Sun is far behind the Moon on the left (26 degrees left
+// of "straight behind"). After that nothing turns by itself; only the bodies move with the clock.
 const rad = THREE.MathUtils.degToRad, az = v => Math.atan2(v[0], v[2]);
-const wrap = x => Math.atan2(Math.sin(x), Math.cos(x));
-const startMs = (() => {
-  let best = Date.now(), score = 9;
-  for (let i = 0; i < 1440; i++) {
-    const ms = Date.now() + i / 1440 * 29.6 * DAY_MS, d = inertialSky(ms);
-    const off = Math.abs(wrap(az(d.sun) - az(d.earth) - rad(60)));
-    if (off < score) { score = off; best = ms; }
-  }
-  pivot.rotation.set(.04, rad(206) - az(inertialSky(best).sun), 0);      // Sun 26 degrees left of "straight behind"
-  return best;
-})();
+/** UTC ms of a date field and its time field, NaN if incomplete. */
+const readUtc = (dateId, timeId) => Date.parse(document.getElementById(dateId).value + 'T' + (document.getElementById(timeId).value || '00:00') + 'Z');
+const startMs = readUtc('p-from', 'p-from-time') || Date.now();
+pivot.rotation.set(.04, rad(206) - az(inertialSky(startMs).sun), 0);
 const orbits = new THREE.Group();
 orbits.add(path(d => scaled(d.sun, SUN_DIST), 365.25, 0xd9b377, .2, startMs));
 orbits.add(path(d => scaled(d.earth, d.earthDistKm * KM), SIDEREAL_DAYS, 0x7fb0e0, .42, startMs));
@@ -304,6 +298,13 @@ function orient(obj, B) {
   tmpMatrix.set(S[0][0], S[0][1], S[0][2], 0, S[1][0], S[1][1], S[1][2], 0, S[2][0], S[2][1], S[2][2], 0, 0, 0, 0, 1);
   sky.quaternion.setFromRotationMatrix(tmpMatrix); }
 let simMs = startMs;
+// Time control (sidebar). With Start and Stop set, the clock plays exactly that span and repeats it:
+// at Stop it jumps back to Start. With the span cleared it runs on without end from where it is.
+let playing = !reduce.matches, stopMs = Infinity, loopMs = startMs, onClock = null;
+let speed = 1;                                       // speed buttons of the sidebar: a factor on TIME_SCALE
+/** Jump to a UTC time: bodies and paths follow at once. */
+function setTime(ms) { simMs = ms; orbits.children.forEach(l => l.userData.retime(ms)); placeBodies(); onClock?.(); }
+function setPlaying(on) { playing = on; onClock?.(); }
 function placeBodies() {
   const d = inertialSky(simMs);
   sun.position.set(...d.sun).multiplyScalar(SUN_DIST);
@@ -358,6 +359,7 @@ let expanded = false, mix = 0, zoom = null;         // mix: 0 = close to the Moo
 // (resizing clears it and made the view go black for a moment).
 const sideEl = document.getElementById('params');
 let sideNow = 0, bufW = 0, bufH = 0;
+const moonDisc = { x: 0, y: 0, r: 0 };            // the Moon on screen, px relative to the hero (for the info cards)
 function layout() {
   const w = world.clientWidth, h = world.clientHeight;
   if (w !== bufW || h !== bufH) { renderer.setSize(w, h, false); bufW = w; bufH = h; }
@@ -373,27 +375,37 @@ function layout() {
   if (!busy) camera.position.set(0, 0, restDistance);
   camera.updateProjectionMatrix();
   const d = 2 * R / (k * restDistance) * h;   // projected diameter in px, for the keyboard target
+  moonDisc.x = vw / 2; moonDisc.y = h / 2; moonDisc.r = d / 2;
   Object.assign(target.style, { left: (vw - d) / 2 + 'px', top: (h - d) / 2 + 'px', width: d + 'px', height: d + 'px' });
 }
 addEventListener('resize', layout);
 layout();
 
-// --- Interaction: drag to turn, click to enter ------------------------------
-const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
-function onMoon(e) {
+// --- Interaction: drag to turn, click on the Moon to set a marker -----------
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), hitLocal = new THREE.Vector3();
+/** The clicked point on the Moon as [lat, lon] in degrees (lon 0-360 E), or null beside the Moon. */
+function moonPoint(e) {
   const r = canvas.getBoundingClientRect();
   ndc.set((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
   ray.setFromCamera(ndc, camera);
-  return ray.intersectObject(moon).length > 0;
+  const hit = ray.intersectObject(moon)[0];
+  if (!hit) return null;
+  // sphere-local axes of the Moon mesh: x = lon 0, y = north, z = lon 90 W (same as place() in landing-pins.js)
+  moon.worldToLocal(hitLocal.copy(hit.point)).normalize();
+  const lat = THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(hitLocal.y, -1, 1)));
+  const lon = THREE.MathUtils.radToDeg(Math.atan2(-hitLocal.z, hitLocal.x));
+  return [lat, ((lon % 360) + 360) % 360];
 }
+const onMoon = e => !!moonPoint(e);
+let dropPin = null;                                  // set by the sidebar block below: (lat, lon) => marker + Coordinates field
 let drag = null, vy = 0, vx = 0;
 hero.addEventListener('pointerdown', e => {
-  if (busy || e.target.closest('a, .params, .pin')) return;                // drag anywhere turns the space
+  if (busy || e.target.closest('a, .params, .pin, .card')) return;         // drag anywhere turns the space
   drag = { x: e.clientX, y: e.clientY, moved: 0 };
   hero.setPointerCapture(e.pointerId); hero.classList.add('dragging');
 });
 hero.addEventListener('pointermove', e => {
-  if (!drag) { hero.style.cursor = busy ? '' : expanded && onMoon(e) ? 'pointer' : 'grab'; return; }
+  if (!drag) { hero.style.cursor = busy ? '' : expanded && onMoon(e) ? 'crosshair' : 'grab'; return; }
   const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
   drag.x = e.clientX; drag.y = e.clientY; drag.moved += Math.abs(dx) + Math.abs(dy);
   vy = dx * .006; vx = dy * .006;
@@ -407,7 +419,8 @@ function release() {
 }
 hero.addEventListener('pointerup', release);
 hero.addEventListener('pointercancel', release);
-// First click anywhere: title away, zoom out to the whole system. After that a click on the Moon enters.
+// First click anywhere: title away, zoom out to the whole system. After that a click on the Moon sets the
+// marker there (same pin as typed coordinates). The globe page is reached through the links only.
 function expand() {
   if (expanded || busy) return; expanded = true;
   document.body.classList.add('expanded');
@@ -426,8 +439,9 @@ function applyMix(m) {
 applyMix(0); layout();
 hero.addEventListener('click', e => {
   const moved = lastMoved; lastMoved = 0;
-  if (busy || moved >= 6 || e.target.closest('a, .params, .pin')) return;
-  if (!expanded) expand(); else if (onMoon(e)) enter();
+  if (busy || moved >= 6 || e.target.closest('a, .params, .pin, .card')) return;
+  if (!expanded) return expand();
+  const c = moonPoint(e); if (c) dropPin?.(c[0], c[1]);
 });
 
 let flight = null;
@@ -439,13 +453,20 @@ function enter() {
   flight = { t0: performance.now(), from: camera.position.z, to: R * 1.22, ms: 1050 };
   setTimeout(leave, 1000);
 }
-target.addEventListener('click', () => expanded ? enter() : expand());
-target.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); expanded ? enter() : expand(); } });
+target.addEventListener('click', expand);
+target.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); expand(); } });
 document.querySelectorAll('[data-enter]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); enter(); }));
 addEventListener('pageshow', e => { if (e.persisted) { busy = false; flight = null; document.body.classList.remove('entering'); layout(); } });
 
 // Landing-site pins (landing-pins.js): an HTML layer over the canvas, switched by "historical" in the sidebar.
 const pins = createPins({ root: document.getElementById('pins'), hero, moon, pivot, camera, R });
+// Info cards (landing-cards.js): a click on a marker opens a card with Sun and Earth at that site for the simulated time.
+const cards = createCards({ hero, pins, now: () => simMs, disc: () => moonDisc });
+// Backspace = undo: removes the marker set last (and its card). Not while typing in a field.
+addEventListener('keydown', e => {
+  if (e.key !== 'Backspace' || e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  if (pins.undo()) e.preventDefault();
+});
 
 // --- Loop -------------------------------------------------------------------
 let last = performance.now();
@@ -457,9 +478,9 @@ function frame(now) {
     pivot.rotation.y += vy; pivot.rotation.x = THREE.MathUtils.clamp(pivot.rotation.x + vx, -1.1, 1.1);
     vy *= .94; vx *= .94;
   }
-  if (!reduce.matches) {
-    simMs += dt * 1000 * TIME_SCALE;                      // the one clock for every motion
-    placeBodies();
+  if (playing) {
+    simMs += dt * 1000 * TIME_SCALE * speed;              // the one clock for every motion
+    if (simMs >= stopMs) setTime(loopMs); else { placeBodies(); onClock?.(); }
   }
   sunUniforms.uTime.value += dt;
   const side = sideEl.getBoundingClientRect().width;      // follows the sidebar's slide and drag frame by frame
@@ -475,6 +496,7 @@ function frame(now) {
     camera.position.z = flight.from + (flight.to - flight.from) * e;
   }
   pins.update(bufW, bufH);
+  cards.update();
   renderer.render(scene, camera);
 }
 requestAnimationFrame(frame);
@@ -518,6 +540,7 @@ requestAnimationFrame(frame);
     if (ok) coord.value = c[0].toFixed(4) + ', ' + c[1].toFixed(4);
   }
   pins.onPick = s => { coord.value = s.lat + ', ' + s.lon; commitCoord(); };
+  dropPin = (lat, lon) => { coord.value = lat + ', ' + lon; commitCoord(); };   // click on the Moon: marker stays where clicked, no turn
   // Header search: a listed site by name, or coordinates. Both end in the Site field and turn the Moon to the site.
   createSearch({ input: document.getElementById('search-input'), list: document.getElementById('search-list'), sites: () => pins.sites, parse: readCoord,
     choose: it => { if (!expanded) expand(); if (it.site) { pins.pick(it.site); pins.face(it.site); } else { coord.value = it.coord.join(', '); commitCoord(true); } } });
@@ -529,6 +552,40 @@ requestAnimationFrame(frame);
     copy.classList.add('done'); copy.textContent = 'Copied';
     setTimeout(() => { copy.classList.remove('done'); copy.textContent = 'Copy'; }, 1400);
   });
+  // Time span: Start and Stop (date and time, UTC) bound the clock and it repeats that span; Play/Pause runs it.
+  // Changing Start jumps there. Clear empties the span: the clock then runs on freely.
+  const play = document.getElementById('p-play'), clock = document.getElementById('p-now'), toDate = document.getElementById('p-to'), toTime = document.getElementById('p-to-time');
+  let shown = '';
+  onClock = () => {
+    const t = new Date(simMs).toISOString().slice(0, 16).replace('T', ' ');   // UTC, as the heading of the block says
+    if (t !== shown) clock.textContent = shown = t;
+    if ((play.getAttribute('aria-pressed') === 'true') !== playing) { play.setAttribute('aria-pressed', playing); play.setAttribute('aria-label', playing ? 'Pause' : 'Play'); }
+  };
+  function readSpan(jump) {
+    const a = readUtc('p-from', 'p-from-time'), b = readUtc('p-to', 'p-to-time'), ok = !(b <= a);
+    toDate.setAttribute('aria-invalid', !ok); toTime.setAttribute('aria-invalid', !ok);     // Stop must be after Start
+    const loop = a && b && ok;                             // both set and in order: repeat this span
+    stopMs = loop ? b : Infinity; loopMs = a || simMs;
+    if (a && (jump || (loop && (simMs < a || simMs >= b)))) setTime(a);
+  }
+  document.getElementById('p-clear').addEventListener('click', () => {
+    ['p-from', 'p-from-time', 'p-to', 'p-to-time'].forEach(id => { document.getElementById(id).value = ''; });
+    readSpan(false);
+  });
+  ['p-from', 'p-from-time'].forEach(id => document.getElementById(id).addEventListener('change', () => readSpan(true)));
+  [toDate, toTime].forEach(el => el.addEventListener('change', () => readSpan(false)));
+  play.addEventListener('click', () => setPlaying(!playing));
+  // Speed buttons beside Play/Pause: factors on the standard pace (TIME_SCALE = 5000 x real time, 1.4 h per second).
+  // 2 x; 12 x = one week in 10 s; 250 x = one year (the Sun's whole path) in 25 s. One at a time; pressing the
+  // active one again goes back to the standard pace. Choosing a speed also starts the clock.
+  const speeds = [...box.querySelectorAll('.pspeed')];
+  speeds.forEach(b => b.addEventListener('click', () => {
+    const on = b.getAttribute('aria-pressed') !== 'true';
+    speeds.forEach(x => x.setAttribute('aria-pressed', x === b && on));
+    speed = on ? +b.dataset.speed : 1;
+    if (on && !playing) setPlaying(true);
+  }));
+  readSpan(false); onClock();
   box.querySelectorAll('.param').forEach(b => b.addEventListener('click', () => {
     const on = b.getAttribute('aria-pressed') !== 'true';
     b.setAttribute('aria-pressed', on); layers[b.dataset.param]?.(on);

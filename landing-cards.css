@@ -1,0 +1,30 @@
+/* Info cards for markers on the 3D Moon (landing-cards.js). Values from tokens.css only.
+   Same surface as the parameter sidebar. One surface per card; the two groups (Sun, Earth) are
+   separated by spacing. A thin line joins each card to its marker. */
+.card-lines{position:absolute;inset:0;width:100%;height:100%;z-index:2;overflow:hidden;pointer-events:none}
+.card-lines line{stroke:var(--text);stroke-opacity:.34;stroke-width:1}
+.cards{position:absolute;inset:0;z-index:4;overflow:hidden;pointer-events:none;font-family:var(--font-ui)}
+.entering .cards,.entering .card-lines{display:none}
+/* Sized to be read at a glance beside the scene: 16 px rows, labels and values in full text colour
+   (labels regular, values semibold), so nothing depends on the muted tone over a moving background. */
+.card{position:absolute;left:0;top:0;width:380px;padding:var(--s4) var(--s5) var(--s5);background:var(--surface);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);border:1px solid var(--line);border-radius:var(--r-outer);color:var(--text);font-size:16px;line-height:1.75;pointer-events:auto;cursor:grab;touch-action:none;user-select:none;animation:card-in var(--t-fast) var(--ease)}
+.card[hidden]{display:none}
+.card.moving{cursor:grabbing}
+.card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.card header{display:flex;align-items:center;gap:var(--s2)}
+/* Name: a field that reads as the title; click to rename */
+.card-name{flex:1;min-width:0;height:40px;margin-left:calc(-1 * var(--s2));padding:0 var(--s2);background:none;border:1px solid transparent;border-radius:var(--r-inner);outline:0;color:var(--text);font:600 20px var(--font-ui);font-variant-numeric:tabular-nums;text-overflow:ellipsis;cursor:text;-webkit-user-select:text;user-select:text;transition:border-color var(--t-fast),background var(--t-fast)}
+.card-name:hover{background:var(--field)}
+.card-name:focus-visible{background:var(--field);border-color:var(--accent)}
+.card-close{flex:none;display:grid;place-items:center;width:36px;height:36px;margin-right:calc(-1 * var(--s2));padding:0;background:none;border:0;border-radius:var(--r-inner);color:var(--text);cursor:pointer;transition:background var(--t-fast)}
+.card-close svg{width:14px;height:14px}
+.card-close:hover{background:var(--surface-hover)}
+.card-close:focus-visible{outline:2px solid var(--accent);outline-offset:0}
+.card-sub{margin:0;font-variant-numeric:tabular-nums}
+.card dl{display:grid;grid-template-columns:auto 1fr;column-gap:var(--s4);margin:var(--s4) 0 0}
+.card dd{margin:0;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.card-terrain{display:block;width:100%;height:var(--hit);margin-top:var(--s5);padding:0;background:var(--field);border:1px solid transparent;border-radius:var(--r-inner);color:var(--text);font:500 16px var(--font-ui);cursor:pointer;transition:border-color var(--t-fast),background var(--t-fast)}
+.card-terrain:hover{background:rgb(255 255 255 / .14)}
+.card-terrain:focus-visible{border-color:var(--accent);outline:0}
+@keyframes card-in{from{opacity:0}}
+@media(prefers-reduced-motion:reduce){.card{animation:none}.card-close,.card-name,.card-terrain{transition:none}}
