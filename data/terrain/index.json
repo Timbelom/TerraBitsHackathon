@@ -1,0 +1,106 @@
+{
+ "description": "Terrain blocks around the listed landing sites, for 'View terrain' without the local server.",
+ "format": {
+  "magic": "LTIL",
+  "version": 3,
+  "header_bytes": 64,
+  "near": "640 x 640 uint16 over 250 km (391 m apart); the inner 200 km are shown",
+  "far": "601 x 601 uint16, 1 km apart, out to 300 km from the site",
+  "layout": "local map of the site: x east, y north, distances along the surface; row 0 = north, column 0 = west",
+  "definition": "tools/lunar.py"
+ },
+ "frame": "MOON_ME (mean Earth / polar axis, DE421), east longitude positive",
+ "height_reference": "metres above the sphere of 1737.4 km",
+ "source": {
+  "file": "LDEM64_PA_pixel_202405.tif",
+  "product": "LOLA MOON_PA gridded dataset, 64 px/deg (NASA PGDA)",
+  "url": "https://pgda.gsfc.nasa.gov/data/LOLA_PA/LDEM64_PA_pixel_202405.tif",
+  "pixel_m_north_south": 473.8,
+  "frame": "MOON_PA"
+ },
+ "generated_utc": "2026-11-15T07:31:56Z",
+ "ai_note": "Prepared with AI assistance (Claude, Anthropic). NASA data, resampled as described.",
+ "blocks": [
+  {
+   "id": "cr",
+   "name": "Connecting ridge (Site 01)",
+   "lat": -89.439021,
+   "lon": 222.844085,
+   "file": "cr.bin",
+   "bytes": 1541666,
+   "sha256": "9e6b0953077ba57a6ae8e44597f8eb83d849c905beaab0cd26a5c972ba491ec0"
+  },
+  {
+   "id": "sh",
+   "name": "Shackleton rim (Site 04)",
+   "lat": -89.780252,
+   "lon": 203.785698,
+   "file": "sh.bin",
+   "bytes": 1541666,
+   "sha256": "b2d40f9d32479d7db8acb52509f6a2370bef716c7fa296be5eb2206a99f94108"
+  },
+  {
+   "id": "a11",
+   "name": "Apollo 11",
+   "lat": 0.67416,
+   "lon": 23.47314,
+   "file": "a11.bin",
+   "bytes": 1541666,
+   "sha256": "3d1ba45295b8d3f83885345c1b2a12a21a948349717358c7ac4d930e3a279858"
+  },
+  {
+   "id": "a17",
+   "name": "Apollo 17",
+   "lat": 20.1911,
+   "lon": 30.7723,
+   "file": "a17.bin",
+   "bytes": 1541666,
+   "sha256": "17a83423cc97933310f1639c08b1233cb87e56570038254e2338a3db5ee781dc"
+  },
+  {
+   "id": "slim",
+   "name": "SLIM",
+   "lat": -13.316,
+   "lon": 25.251,
+   "file": "slim.bin",
+   "bytes": 1541666,
+   "sha256": "7125f8624839722a69df6696dd1d542fa06d703a9e06ad3886104520e4402a79"
+  },
+  {
+   "id": "bg",
+   "name": "Blue Ghost 1",
+   "lat": 18.562,
+   "lon": 61.81,
+   "file": "bg.bin",
+   "bytes": 1541666,
+   "sha256": "8511acb78aa0664e2125c01c2738e8f743d8e7c40f588e8135671aec615e40bc"
+  },
+  {
+   "id": "ch3",
+   "name": "Chandrayaan-3",
+   "lat": -69.3741,
+   "lon": 32.32,
+   "file": "ch3.bin",
+   "bytes": 1541666,
+   "sha256": "03fe4cce6a45ae74c2caf26c2950886267f7190e164171882cd98f8586517068"
+  },
+  {
+   "id": "im1",
+   "name": "IM-1 Odysseus",
+   "lat": -80.13,
+   "lon": 1.44,
+   "file": "im1.bin",
+   "bytes": 1541666,
+   "sha256": "c7d12cc526f8727e443fb5032fcb4e8562e6070c2e3864cb78a5f8ee7e842ade"
+  },
+  {
+   "id": "im2",
+   "name": "IM-2 Athena",
+   "lat": -84.7906,
+   "lon": 29.1957,
+   "file": "im2.bin",
+   "bytes": 1541666,
+   "sha256": "a1c2284b8d34872c083747ed5a8186c99c9c9452ccc236339836966f3edd4719"
+  }
+ ]
+}

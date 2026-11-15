@@ -236,17 +236,21 @@ class Ldem:
         r0 = np.minimum(np.floor(row_f).astype(np.int64), self.height - 2)
         row_lo, row_hi = int(r0.min()), int(r0.max()) + 1
         col_lo, col_hi = int(c0.min()), int(c0.max()) + 1
-        if col_hi - col_lo + 1 > self.width:                 # the whole circle of longitudes is needed
-            col_hi = col_lo + self.width
-        block = self.read_rows_cols(row_lo, row_hi, col_lo, col_hi)
+        fr = row_f - r0
+        fc = col_f - c0
+        ri = r0 - row_lo
+        if col_hi - col_lo + 1 > self.width:                 # near a pole: the whole circle of longitudes
+            block = self.read_rows_cols(row_lo, row_hi, 0, self.width - 1)
+            ci, ci1 = c0 % self.width, (c0 + 1) % self.width
+        else:
+            block = self.read_rows_cols(row_lo, row_hi, col_lo, col_hi)
+            ci = c0 - col_lo
+            ci1 = ci + 1
         finite = np.isfinite(block)
         if not finite.all():
             block = np.where(finite, block, float(block[finite].min()) if finite.any() else 0.0)
-        fr = row_f - r0
-        fc = col_f - c0
-        ri, ci = r0 - row_lo, c0 - col_lo
-        z = ((block[ri, ci] * (1.0 - fc) + block[ri, ci + 1] * fc) * (1.0 - fr)
-             + (block[ri + 1, ci] * (1.0 - fc) + block[ri + 1, ci + 1] * fc) * fr)
+        z = ((block[ri, ci] * (1.0 - fc) + block[ri, ci1] * fc) * (1.0 - fr)
+             + (block[ri + 1, ci] * (1.0 - fc) + block[ri + 1, ci1] * fc) * fr)
         return np.asarray(z, dtype=np.float64).reshape(shape)
 
 
