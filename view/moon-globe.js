@@ -8,14 +8,15 @@
 // Surface modes
 //   relief     grey ground, shaded and shadowed by the scene's Sun
 //   imagery    the same with the albedo map of the page (LROC WAC mosaic)
-//   elevation  height above the reference sphere in colour (not shaded: the colours are the legend's)
+//   elevation  height above the reference sphere in colour (no sunlight; slopes darken the colours a little, so the
+//              relief shows through: view/relief.js shadeData)
 //   sunlight, earth   a value grid in colour (setValues), e.g. the mean illumination of a year
 // Layers: latitude/longitude grid every 30 deg, contour lines (elevation mode), the 200 km squares, and the area
 // within the limits of the sidebar (setArea), which lies over every surface mode.
 import * as THREE from 'three';
 import { MOON_RADIUS_KM, RAD, squares as makeSquares, squareAt, unitFromLatLon, localKmToUnit, bodyToThree } from '../core/frames.js';
 import { VIRIDIS, colorAt } from './colors.js';
-import { reliefShade, shadeMaterial } from './relief.js';
+import { reliefShade, shadeMaterial, shadeData } from './relief.js';
 
 const R_M = MOON_RADIUS_KM * 1000;
 const COMPRESS = 1;                          // brightness of the lit Moon: L / (1 + COMPRESS * L)
@@ -106,7 +107,7 @@ if (uAreaOn > .5) {
     // not burn out to white and its craters stay readable (COMPRESS, see view/relief.js).
     relief: withArea(shadeMaterial(new THREE.MeshStandardMaterial({ color: 0xc2c6cc, roughness: .96, metalness: 0, ...offset }), { compress: COMPRESS, horizon })),
     imagery: withArea(shadeMaterial(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, metalness: 0, map: albedo, ...offset }), { compress: COMPRESS, horizon })),
-    data: withArea(new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, ...offset })),
+    data: withArea(shadeData(new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, ...offset }))),   // colours with the relief showing through
   };
   const mesh = new THREE.Mesh(geometry, materials.relief);
   mesh.castShadow = mesh.receiveShadow = true;

@@ -25,7 +25,7 @@ export function createPins({ root, hero, moon, pivot, camera, R }) {
   let turn = null;
   // sites: the listed sites (for the search). picked: id of the selected site, 'custom' for typed coordinates.
   // cards: ids of the sites with an open info card (kept by landing-cards.js). Each site carries vis, x, y: on screen this frame, hero px.
-  const api = { sites: [], on: false, picked: null, onPick: null, onOpen: null, onClose: null, cards: new Set(), show, pick, custom, face, undo, rename, marked, update };
+  const api = { sites: [], on: false, picked: null, onPick: null, onOpen: null, onClose: null, cards: new Set(), show, pick, custom, face, turnTo, undo, rename, marked, update };
   let freeN = 0;
   const STORE = 'terrabits.points';
   let saved = { points: [], names: {} };
@@ -102,6 +102,11 @@ export function createPins({ root, hero, moon, pivot, camera, R }) {
     if (!c) return;
     place(own, c[0], c[1]); own.name = coordText(own); own.key = '';
     if (turnTo) face(own);
+  }
+  /** Turn the space to the tilt x and the turn y (radians), the short way round (tilt limited as for dragging). */
+  function turnTo(x, y) {
+    const r = pivot.rotation;
+    turn = { t0: performance.now(), ms: still.matches ? 0 : TURN_MS, x0: r.x, y0: r.y, dx: THREE.MathUtils.clamp(x, -TILT_MAX, TILT_MAX) - r.x, dy: Math.atan2(Math.sin(y - r.y), Math.cos(y - r.y)) };
   }
   /** Turn the space so that the site faces the camera (tilt limited as for dragging). */
   function face(s) {

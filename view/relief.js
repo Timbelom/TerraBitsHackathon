@@ -27,6 +27,25 @@ export function reliefShade({ cols, rows, height, cellX, cellY, wrap = false, sl
 }
 
 /**
+ * The same factor for an unlit, colour-coded material (MeshBasicMaterial with vertex colours): the colours keep
+ * their hue, the shape of the ground shows through them. light: unit vector [x, y, z] in the mesh's own axes of a
+ * fixed light that also shades the slopes (hillshade, independent of where the Sun is), or null for the factor alone.
+ * The legend shows the unshaded colours.
+ */
+export function shadeData(material, light = null) {
+  material.onBeforeCompile = shader => {
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float shade;\nvarying float vShade;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvShade = shade' + (light ? ' * (.74 + .42 * clamp(dot(normalize(normal), vec3(' + light.map(v => v.toFixed(4)).join(', ') + ')), 0., 1.))' : '') + ';');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vShade;')
+      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= vShade;');
+  };
+  material.customProgramCacheKey = () => 'data-shade-' + (light ? light.join(',') : 'none');
+  return material;
+}
+
+/**
  * Lets a lit material (MeshStandardMaterial) use the geometry's float attribute "shade" as that factor.
  * compress > 0 also bends the brightness of the lit result: out = L / (1 + compress * L). Dark parts keep
  * their brightness, the part under a high Sun is held back, so it does not burn out to white.

@@ -16,6 +16,10 @@ with the date: sunlight for power, Earth in view for direct radio contact.
   7.6 km skyline map (`core/area.js`), so it shows the large shapes; a marked point's card uses finer ground.
 - **Terrain view** ("View terrain" on a card): the ground 200 x 200 km around the point in true proportions,
   lit and shadowed by the Sun as it stands there, with values for the point under the pointer.
+  "Mean sunlight" and "Earth in view" are worked out there for the open ground: for points 1.6 km apart, each
+  against its own terrain skyline (72 directions, terrain to 300 km from the site), the mean share of the disc in
+  view over the span of the time bar (`core/exposure.js`). The colour scale runs between the lowest and the
+  highest value on that ground. Colour-coded surfaces are shaded by the relief, on the Moon and in the terrain view.
 - **Surfaces and layers:** relief with shadows, imagery, elevation, mean sunlight and Earth visibility of a
   year; latitude/longitude grid, contour lines, 200 km squares.
 

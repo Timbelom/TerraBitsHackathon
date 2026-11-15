@@ -18,7 +18,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { MOON_RADIUS_KM, RAD } from '../core/frames.js';
 import { discFraction, SUN_RADIUS_DEG, RECEIVER_HEIGHT_M } from '../core/visibility.js';
 import { VIRIDIS, colorAt } from './colors.js';
-import { reliefShade, shadeMaterial } from './relief.js';
+import { reliefShade, shadeMaterial, shadeData } from './relief.js';
 
 const SOLAR_CONSTANT = 1361;                 // W/m2 at 1 au
 // Sun and Earth stand on a sky dome around the site, close enough to be in the picture together with the ground
@@ -71,7 +71,8 @@ export function createTerrainView({ renderer, input }) {
   const clip = [new THREE.Plane(new THREE.Vector3(1, 0, 0), 100), new THREE.Plane(new THREE.Vector3(-1, 0, 0), 100),
                 new THREE.Plane(new THREE.Vector3(0, 0, 1), 100), new THREE.Plane(new THREE.Vector3(0, 0, -1), 100)];
   const reliefMat = shadeMaterial(new THREE.MeshStandardMaterial({ color: 0xc2c6cc, roughness: .95, metalness: 0, clippingPlanes: clip, clipShadows: false }));   // relief shading: view/relief.js
-  const dataMat = new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, clippingPlanes: clip, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+  // colour-coded surfaces: the colours with a fixed hillshade (light from the north-west, 45 deg up), so the ground keeps its shape under them
+  const dataMat = shadeData(new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, clippingPlanes: clip, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }), [-.5, .7071, -.5]);
   const group = new THREE.Group(); scene.add(group);
   const contours = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: .8, clippingPlanes: clip }));
   contours.visible = false; group.add(contours);
@@ -195,7 +196,7 @@ export function createTerrainView({ renderer, input }) {
   async function load(b, onProgress = () => {}) {
     onProgress(0, 'Building the ground');
     await pause();
-    block = b; half = b.halfKm; visHalf = b.visibleKm / 2;
+    block = b; half = b.halfKm; visHalf = b.visibleKm / 2; layers.clear(); if (mode !== 'relief' && mode !== 'elevation') mode = 'relief';
     clip.forEach(p => { p.constant = visHalf; });
     ensureBuffers(b);
     r0 = MOON_RADIUS_KM + b.centerHeightM / 1000;
@@ -222,8 +223,8 @@ export function createTerrainView({ renderer, input }) {
     }
     onProgress(.55, 'Shading'); await pause();
     const span = Math.max(1, maxM - minM);
-    for (let i = 0; i < RES * RES; i++) colorAt((b.zMin + b.near[i] * b.zStep - minM) / span, VIRIDIS, heightColors, i * 3);
-    geometry.attributes.position.needsUpdate = true; geometry.attributes.color.needsUpdate = true;
+    painted = ''; paint(mode === 'relief' ? 'elevation' : mode);
+    geometry.attributes.position.needsUpdate = true;
     farGroup.children[0].geometry.attributes.position.needsUpdate = true;
     for (const piece of farGroup.children) {                      // bounding sphere of each piece, from its corner and edge nodes
       const [ra, rb, ca, cb] = piece.userData.range, box = new THREE.Box3(), p = new THREE.Vector3();
@@ -380,12 +381,48 @@ export function createTerrainView({ renderer, input }) {
     parent.add(sunObj, earthObj); sunObj = earthObj = null;
   }
 
+  // ---- colour-coded surfaces ----------------------------------------------------------------------
+  // 'elevation' (the block's heights) and value grids over the drawn square (setValues), e.g. mean sunlight.
+  const layers = new Map();          // name -> { values, n, stops, lo, hi }
+  let painted = '';
+  function paint(name) {
+    if (painted === name || !block) return; painted = name;
+    if (name === 'elevation') {
+      const span = Math.max(1, maxM - minM);
+      for (let i = 0; i < RES * RES; i++) colorAt((block.zMin + block.near[i] * block.zStep - minM) / span, VIRIDIS, heightColors, i * 3);
+    } else {
+      const L = layers.get(name), span = L.hi - L.lo;
+      for (let r = 0, i = 0; r < RES; r++) for (let c = 0; c < RES; c++, i++) colorAt((gridValue(L, -half + c * block.stepKm, half - r * block.stepKm) - L.lo) / span, L.stops, heightColors, i * 3);
+    }
+    geometry.attributes.color.needsUpdate = true;
+  }
+  // value of a grid at map x, y (km east and north of the site), between its points; the rim outside the square takes the edge's value
+  function gridValue(L, x, y) {
+    const last = L.n - 1, cf = Math.min(Math.max((x + visHalf) / (2 * visHalf) * last, 0), last), rf = Math.min(Math.max((visHalf - y) / (2 * visHalf) * last, 0), last);
+    const c0 = Math.min(Math.floor(cf), last - 1), q0 = Math.min(Math.floor(rf), last - 1), fc = cf - c0, fr = rf - q0, a = q0 * L.n + c0, b = a + L.n, v = L.values;
+    return (v[a] * (1 - fc) + v[a + 1] * fc) * (1 - fr) + (v[b] * (1 - fc) + v[b + 1] * fc) * fr;
+  }
+  /**
+   * A value grid over the drawn square (n x n, row 0 = northern edge, column 0 = western edge) and its colour scale,
+   * shown by setMode(name). The scale runs from the lowest to the highest value of the grid, over at least minSpan,
+   * so differences inside the square are seen; range(name) gives the two ends for the legend.
+   */
+  function setValues(name, values, n, stops, minSpan = .05) {
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < values.length; i++) { const v = values[i]; if (v < lo) lo = v; if (v > hi) hi = v; }
+    if (hi - lo < minSpan) { const mid = (lo + hi) / 2; lo = Math.max(0, Math.min(1 - minSpan, mid - minSpan / 2)); hi = lo + minSpan; }
+    layers.set(name, { values, n, stops, lo, hi });
+    if (painted === name) { painted = ''; if (mode === name) paint(name); }
+  }
+  /** 'relief' | 'elevation' | the name of a value grid that is there. Returns the mode that is now shown. */
   function setMode(m) {
-    mode = m === 'elevation' ? 'elevation' : 'relief';
+    mode = m === 'elevation' || layers.has(m) ? m : 'relief';
+    if (mode !== 'relief') paint(mode);
     if (mesh) { mesh.material = mode === 'relief' ? reliefMat : dataMat; mesh.castShadow = mesh.receiveShadow = mode === 'relief'; }
     contours.visible = mode === 'elevation' && contoursOn;
     if (contours.visible && block) buildContours();
     shadowDirty = true;
+    return mode;
   }
   let contoursOn = true;
   function setContours(on, interval = contourInterval) {
@@ -469,6 +506,11 @@ export function createTerrainView({ renderer, input }) {
 
   return {
     scene, camera, controls, load, setSky, adopt, release, setPaths, showPaths, setMode, setContours, pick, resize, render,
+    setValues, hasLayer: name => layers.has(name), get mode() { return mode; },
+    /** { lo, hi } of a value grid's colour scale. */
+    valueRange: name => { const L = layers.get(name); return L && { lo: L.lo, hi: L.hi }; },
+    /** Value of a grid at a point of the site's map (km east, km north), or NaN. */
+    valueAt: (name, xKm, yKm) => layers.has(name) ? gridValue(layers.get(name), xKm, yKm) : NaN,
     hideCursor: () => { cursor.visible = false; },
     get block() { return block; },
     get range() { return { minM, maxM }; },
