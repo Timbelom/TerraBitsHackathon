@@ -36,8 +36,9 @@ export function nextCrossing(ms, lat, lon, key, endMs = ms + SEARCH_MS) {
   return null;
 }
 
-/** hero: the hero element (cards live in it); pins: createPins api; now(): simulated UTC ms; disc(): Moon on screen {x, y, r} in hero px. */
-export function createCards({ hero, pins, now, disc }) {
+/** hero: the hero element (cards live in it); pins: createPins api; now(): simulated UTC ms; disc(): Moon on screen {x, y, r} in hero px;
+ *  avoid(): a rectangle {x, y, w, h} in hero px that new cards keep clear of (the time series panel), or null. */
+export function createCards({ hero, pins, now, disc, avoid }) {
   const NS = 'http://www.w3.org/2000/svg';
   const lines = document.createElementNS(NS, 'svg'); lines.setAttribute('class', 'card-lines'); lines.setAttribute('aria-hidden', 'true');
   const root = document.createElement('div'); root.className = 'cards';
@@ -56,6 +57,8 @@ export function createCards({ hero, pins, now, disc }) {
   /** Area this rectangle shares with the other cards (each grown by the gap between cards). */
   function taken(c, x, y) {
     let a = 0;
+    const v = avoid?.();
+    if (v) a += Math.max(0, Math.min(x + c.w, v.x + v.w + BETWEEN) - Math.max(x, v.x - BETWEEN)) * Math.max(0, Math.min(y + c.h, v.y + v.h + BETWEEN) - Math.max(y, v.y - BETWEEN));
     for (const o of cards.values()) if (o !== c && !o.el.hidden)
       a += Math.max(0, Math.min(x + c.w, o.x + o.w + BETWEEN) - Math.max(x, o.x - BETWEEN)) * Math.max(0, Math.min(y + c.h, o.y + o.h + BETWEEN) - Math.max(y, o.y - BETWEEN));
     return a;

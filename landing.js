@@ -5,6 +5,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createPins } from './landing-pins.js';
 import { createSearch } from './landing-search.js';
 import { createCards } from './landing-cards.js';
+import { createSeries } from './landing-series.js?v=4';
 import { inertialSky, SIDEREAL_DAYS, DAY_MS, MOON_RADIUS_KM, EARTH_RADIUS_KM, SUN_RADIUS_KM, AU_KM } from './lunar-sky.js';
 
 const world = document.getElementById('world');
@@ -67,8 +68,9 @@ loader.load('assets/moon-normal.jpg', t => {
 
 // --- Sun and Earth -----------------------------------------------------------------
 // Frame: Moon-centred, axes fixed to the stars (inertialSky in lunar-sky.js, checked against JPL
-// Horizons). The star field and the space stand still. Everything that moves does so from one
-// clock (simMs): the Moon turns once per sidereal month, the Earth circles the Moon in the same
+// Horizons). Everything that moves does so from one
+// clock (simMs). The scene is shown Moon-fixed (see placeBodies): the Moon stands still and the sky turns
+// around it once per sidereal month. In star-fixed terms: the Moon turns once per sidereal month, the Earth circles the Moon in the same
 // time and spins once per day, the Sun goes round once per year.
 // TIME_SCALE is the single time scale: simulated seconds per real second. Change it here to
 // speed everything up or slow it down together. 1 = real time.
@@ -297,6 +299,7 @@ function orient(obj, B) {
 { const S = inertialSky(startMs).icrsToScene;
   tmpMatrix.set(S[0][0], S[0][1], S[0][2], 0, S[1][0], S[1][1], S[1][2], 0, S[2][0], S[2][1], S[2][2], 0, 0, 0, 0, 1);
   sky.quaternion.setFromRotationMatrix(tmpMatrix); }
+const skyBase = sky.quaternion.clone();           // catalogue (ICRS) -> star-fixed scene axes
 let simMs = startMs;
 // Time control (sidebar). With Start and Stop set, the clock plays exactly that span and repeats it:
 // at Stop it jumps back to Start. With the span cleared it runs on without end from where it is.
@@ -305,13 +308,23 @@ let speed = 1;                                       // speed buttons of the sid
 /** Jump to a UTC time: bodies and paths follow at once. */
 function setTime(ms) { simMs = ms; orbits.children.forEach(l => l.userData.retime(ms)); placeBodies(); onClock?.(); }
 function setPlaying(on) { playing = on; onClock?.(); }
+// The Moon is held still: it keeps the orientation it has at the start (HOLD). Everything else (Sun, Earth,
+// paths, stars) is turned as one rigid sky by `held`, the rotation that undoes the Moon's own turn since then.
+// Geometry between the bodies is unchanged; only the frame the scene is shown in is Moon-fixed.
+const HOLD = inertialSky(startMs).moonToScene, held = new THREE.Quaternion(), tmpVec = new THREE.Vector3();
+const turned = v => tmpVec.set(...v).applyQuaternion(held);
 function placeBodies() {
-  const d = inertialSky(simMs);
-  sun.position.set(...d.sun).multiplyScalar(SUN_DIST);
-  sunLight.position.set(...d.sun).multiplyScalar(100);
-  earth.position.set(...d.earth).multiplyScalar(d.earthDistKm * KM);
-  orient(moon, d.moonToScene);        // the Moon turns, always showing the Earth the same face
-  orient(earthBall, d.earthToScene);  // true axis, one turn per day
+  const d = inertialSky(simMs), m = d.moonToScene;
+  const T = HOLD.map(r => [0, 1, 2].map(k => r[0] * m[k][0] + r[1] * m[k][1] + r[2] * m[k][2]));   // HOLD x transpose(moonToScene)
+  tmpMatrix.set(T[0][0], T[0][1], T[0][2], 0, T[1][0], T[1][1], T[1][2], 0, T[2][0], T[2][1], T[2][2], 0, 0, 0, 0, 1);
+  held.setFromRotationMatrix(tmpMatrix);
+  sun.position.copy(turned(d.sun)).multiplyScalar(SUN_DIST);
+  sunLight.position.copy(turned(d.sun)).multiplyScalar(100);
+  earth.position.copy(turned(d.earth)).multiplyScalar(d.earthDistKm * KM);
+  orient(moon, HOLD);                 // the Moon stands still
+  orient(earthBall, d.earthToScene); earthBall.quaternion.premultiply(held);  // true axis, one turn per day
+  orbits.quaternion.copy(held);
+  sky.quaternion.copy(held).multiply(skyBase);
 }
 placeBodies();
 
@@ -400,7 +413,7 @@ const onMoon = e => !!moonPoint(e);
 let dropPin = null;                                  // set by the sidebar block below: (lat, lon) => marker + Coordinates field
 let drag = null, vy = 0, vx = 0;
 hero.addEventListener('pointerdown', e => {
-  if (busy || e.target.closest('a, .params, .pin, .card')) return;         // drag anywhere turns the space
+  if (busy || e.target.closest('a, .params, .pin, .card, .series')) return;         // drag anywhere turns the space
   drag = { x: e.clientX, y: e.clientY, moved: 0 };
   hero.setPointerCapture(e.pointerId); hero.classList.add('dragging');
 });
@@ -439,7 +452,7 @@ function applyMix(m) {
 applyMix(0); layout();
 hero.addEventListener('click', e => {
   const moved = lastMoved; lastMoved = 0;
-  if (busy || moved >= 6 || e.target.closest('a, .params, .pin, .card')) return;
+  if (busy || moved >= 6 || e.target.closest('a, .params, .pin, .card, .series')) return;
   if (!expanded) return expand();
   const c = moonPoint(e); if (c) dropPin?.(c[0], c[1]);
 });
@@ -461,7 +474,10 @@ addEventListener('pageshow', e => { if (e.persisted) { busy = false; flight = nu
 // Landing-site pins (landing-pins.js): an HTML layer over the canvas, switched by "historical" in the sidebar.
 const pins = createPins({ root: document.getElementById('pins'), hero, moon, pivot, camera, R });
 // Info cards (landing-cards.js): a click on a marker opens a card with Sun and Earth at that site for the simulated time.
-const cards = createCards({ hero, pins, now: () => simMs, disc: () => moonDisc });
+// Time series (landing-series.js): solar elevation of the marked points over the time span, switched by "series" in the sidebar.
+const series = createSeries({ hero, marked: () => pins.marked(), now: () => simMs, span: () => stopMs < Infinity ? [loopMs, stopMs] : null,
+  setTime: ms => setTime(ms), onClose: () => document.querySelector('.param[data-param="series"]')?.click() });
+const cards = createCards({ hero, pins, now: () => simMs, disc: () => moonDisc, avoid: () => series.rect() });
 // Backspace = undo: removes the marker set last (and its card). Not while typing in a field.
 addEventListener('keydown', e => {
   if (e.key !== 'Backspace' || e.target.closest?.('input, textarea, select, [contenteditable]')) return;
@@ -497,6 +513,7 @@ function frame(now) {
   }
   pins.update(bufW, bufH);
   cards.update();
+  series.update();
   renderer.render(scene, camera);
 }
 requestAnimationFrame(frame);
@@ -509,6 +526,7 @@ requestAnimationFrame(frame);
     stars: on => { sky.visible = on; },
     relief: on => { const k = on ? 1.35 : 0; material.normalScale.set(k, k); },
     historical: on => pins.show(on),
+    series: on => series.show(on),
     orbits: on => { orbits.visible = on; },              // both paths: the Sun's yearly path and the Earth's orbit
   };
   // Opening the sidebar narrows the 3D view to the remaining width; the render loop follows its width.

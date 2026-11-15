@@ -25,7 +25,7 @@ export function createPins({ root, hero, moon, pivot, camera, R }) {
   let turn = null;
   // sites: the listed sites (for the search). picked: id of the selected site, 'custom' for typed coordinates.
   // cards: ids of the sites with an open info card (kept by landing-cards.js). Each site carries vis, x, y: on screen this frame, hero px.
-  const api = { sites: [], on: false, picked: null, onPick: null, onOpen: null, onClose: null, cards: new Set(), show, pick, custom, face, undo, rename, update };
+  const api = { sites: [], on: false, picked: null, onPick: null, onOpen: null, onClose: null, cards: new Set(), show, pick, custom, face, undo, rename, marked, update };
   let freeN = 0;
   const STORE = 'terrabits.points';
   let saved = { points: [], names: {} };
@@ -67,6 +67,8 @@ export function createPins({ root, hero, moon, pivot, camera, R }) {
   hero.addEventListener('pointerdown', () => { turn = null; });   // dragging takes over from a running turn
 
   function show(on) { api.on = on; }
+  /** The marked points: the selected site and every site with an open info card (for the time series, landing-series.js). */
+  function marked() { return all.filter(s => s.id === api.picked || api.cards.has(s.id)); }
   /** Select a listed site (pin, name or search). */
   function pick(s) { api.onPick?.(s); api.picked = s.id; all.forEach(x => x.el.classList.remove('open')); }
   /** Click on a marker or a name: select the site and open (or close) its card. */
