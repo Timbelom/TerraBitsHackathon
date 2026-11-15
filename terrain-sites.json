@@ -1,0 +1,61 @@
+{
+  "defaultSite": "dm2",
+  "sites": [
+    {
+      "id": "dm2",
+      "name": "DM2 Surface",
+      "file": "./site-data/dm2.json",
+      "source": "DM2_final_adj_5mpp_surf copy.tif",
+      "description": "20 \u00d7 20 km detail DEM near the lunar south polar region.",
+      "width_km": 20.0,
+      "height_km": 20.0,
+      "native_resolution_m": 5.0,
+      "center": {
+        "latitude": -83.954017,
+        "longitude_east": 58.822055
+      }
+    },
+    {
+      "id": "site01",
+      "name": "Site 01",
+      "file": "./site-data/site01.json",
+      "source": "Site01_final_adj_5mpp_surf.tif",
+      "description": "Additional local south-pole detail site from the uploaded hackathon bundle.",
+      "width_km": 16.0,
+      "height_km": 16.0,
+      "native_resolution_m": 5.0,
+      "center": {
+        "latitude": -89.463163,
+        "longitude_east": -137.489553
+      }
+    },
+    {
+      "id": "site04",
+      "name": "Site 04",
+      "file": "./site-data/site04.json",
+      "source": "Site04_final_adj_5mpp_surf.tif",
+      "description": "Additional local south-pole detail site from the uploaded hackathon bundle.",
+      "width_km": 16.0,
+      "height_km": 16.0,
+      "native_resolution_m": 5.0,
+      "center": {
+        "latitude": -89.766811,
+        "longitude_east": -171.869898
+      }
+    },
+    {
+      "id": "site20",
+      "name": "Site 20",
+      "file": "./site-data/site20.json",
+      "source": "Site20_final_adj_5mpp_surf.tif",
+      "description": "Additional local south-pole detail site from the uploaded hackathon bundle.",
+      "width_km": 16.0,
+      "height_km": 16.0,
+      "native_resolution_m": 5.0,
+      "center": {
+        "latitude": -85.426577,
+        "longitude_east": 31.742761
+      }
+    }
+  ]
+}

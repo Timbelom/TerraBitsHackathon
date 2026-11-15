@@ -1,0 +1,30 @@
+/* TerraBits design tokens. Every page links this file first; components use these values only.
+   Rules: one accent, one surface per component (no nested boxes), group with spacing,
+   inner radius = outer radius - padding, text contrast >= 4.5:1, numbers in tabular figures. */
+:root{
+  /* colour */
+  --bg:#02040b;
+  --surface:rgb(17 18 20 / .84);  /* tool panels: neutral dark grey over the 3D scene, always with a 18px blur */
+  --line:rgb(255 255 255 / .12);           /* the one hairline that separates panel and scene */
+  --field:rgb(255 255 255 / .07);          /* input background */
+  --surface-hover:rgb(255 255 255 / .09);
+  --text:#f4f5f8;
+  --text-muted:#b3b7bd;  /* secondary text; never go dimmer for text */
+  --accent:#eceef1;  /* no accent colour for now: active state, focus and fills are near-white */
+  --accent-ink:#111214;  /* marks on top of the active fill */
+  /* type: Inter for all tool UI (labels, values, units), Jost only for the landing headline, no monospace */
+  --font-display:'Jost','DM Sans',Arial,sans-serif;
+  --font-ui:'Inter','Helvetica Neue',Arial,sans-serif;
+  /* spacing scale */
+  --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;
+  /* radius: nested corners follow inner = outer - padding */
+  --pad:4px;
+  --r-outer:8px;
+  --r-inner:calc(var(--r-outer) - var(--pad));
+  /* motion: only for feedback on an action */
+  --ease:cubic-bezier(.2,.7,.2,1);
+  --t-fast:.18s;
+  --t-panel:.4s;
+  --hit:44px;                              /* minimum click target */
+}
+.num,[data-num]{font-variant-numeric:tabular-nums}

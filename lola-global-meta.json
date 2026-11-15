@@ -1,0 +1,14 @@
+{
+  "width": 2048,
+  "height": 1024,
+  "longitude_start": 0,
+  "longitude_end": 360,
+  "latitude_start": 90,
+  "latitude_end": -90,
+  "height_unit": "metres",
+  "pixel_type": "little-endian signed int16",
+  "nodata_cells": 0,
+  "source": "LDEM64_preview.tif (LOLA resampled preview)",
+  "elevation_min_m": -8907.2861328125,
+  "elevation_max_m": 10572.4248046875
+}

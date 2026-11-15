@@ -1,0 +1,4 @@
+data/raw/*.txt
+data/raw/*.tif
+data/raw/*.TIF
+tools/*.log

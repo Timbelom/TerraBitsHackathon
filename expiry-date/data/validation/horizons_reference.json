@@ -1,0 +1,18 @@
+{
+  "description": "Reference values from NASA JPL Horizons observer tables (QUANTITIES=4, apparent azimuth/elevation of the body centre), CENTER=coord@301 (user-defined site on the Moon), TIME_TYPE=UT, TLIST in JD.",
+  "source": "https://ssd.jpl.nasa.gov/api/horizons.api  (COMMAND 10 = Sun, 399 = Earth; Center pole/equ: MEAN_ME)",
+  "retrieved": "2026-11-14",
+  "jd_ut": [2461476.6666667, 2466790.2083333, 2474711.4166667],
+  "jd_epoch_2027_01_01": 2461406.5,
+  "sites": [
+    { "name": "south pole", "lat": -89.5, "lon": 120.0,
+      "sun":   [[9.292298, -0.290402], [29.684722, -0.432877], [306.964611, -1.225614]],
+      "earth": [[234.496890, 6.000498], [235.662206, 0.180489], [243.773920, -4.172552]] },
+    { "name": "mid latitude", "lat": 45.0, "lon": 300.0,
+      "sun":   [[347.142573, -43.480063], [321.605019, -37.123434], [60.946080, -23.962416]],
+      "earth": [[121.100763, 18.831114], [116.270903, 22.725149], [106.593569, 20.706665]] },
+    { "name": "equator (Apollo 11 LM)", "lat": 0.67416, "lon": 23.47314,
+      "sun":   [[88.995091, -15.808342], [88.432635, -36.194588], [88.493806, 46.518156]],
+      "earth": [[255.499573, 60.107683], [267.198784, 62.042625], [278.981940, 69.967952]] }
+  ]
+}

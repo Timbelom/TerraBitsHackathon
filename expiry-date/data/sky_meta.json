@@ -1,0 +1,43 @@
+{
+  "file": "sky_2027_2066.bin",
+  "description": "Hourly sub-Earth and sub-solar point on the Moon and Earth-Moon distance, 2027-01-01 00:00 UTC to 2067-01-01 00:00 UTC (inclusive).",
+  "n": 350641,
+  "start_utc": "2027-01-01T00:00:00Z",
+  "step_hours": 1,
+  "dtype": "float32 little-endian",
+  "arrays": [
+    "earth_lon_deg",
+    "earth_lat_deg",
+    "sun_lon_deg",
+    "sun_lat_deg",
+    "earth_dist_km"
+  ],
+  "layout": "five arrays of length n, back to back, in the order of \"arrays\"",
+  "units": {
+    "lon": "degrees east, 0..360",
+    "lat": "degrees",
+    "dist": "km (Horizons delta in AU x 149597870.700)"
+  },
+  "frame": "MOON_ME (Mean-Earth/Polar-Axis), east longitude positive",
+  "ephemeris": "DE441",
+  "source": "NASA JPL Horizons API, https://ssd.jpl.nasa.gov/api/horizons.api",
+  "query": {
+    "COMMAND": "301",
+    "CENTER": "500@399",
+    "EPHEM_TYPE": "OBSERVER",
+    "QUANTITIES": "14,15,20",
+    "STEP_SIZE": "1h",
+    "CSV_FORMAT": "YES",
+    "blocks": "eight 5-year blocks, Jan 1 to Jan 1"
+  },
+  "retrieved": "Sat Nov 14 06:19:50 2026",
+  "max_float32_rounding_error": {
+    "earth_lon_deg": 1.5257812492563971e-05,
+    "earth_lat_deg": 2.3840332019631205e-07,
+    "sun_lon_deg": 1.5257812492563971e-05,
+    "sun_lat_deg": 5.960083004907801e-08,
+    "earth_dist_km": 0.01562499935971573
+  },
+  "sha256": "12c1867143383d5414f645c8acd887f90ce610d230be2a66426720a17e318af4",
+  "ai_note": "Prepared with AI assistance (Claude, Anthropic). Values are NASA JPL Horizons output, repacked without change except float32 rounding."
+}
