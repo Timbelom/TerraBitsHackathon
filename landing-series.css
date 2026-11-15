@@ -26,6 +26,8 @@
 .series-tick2{font-weight:400}
 .series-dot{stroke:#111214;stroke-width:2}
 .series-line{fill:none;stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round}
+.series-track{fill:var(--text);fill-opacity:.12}
+.series-lit{stroke:none}
 .series-now{stroke:var(--text);stroke-width:1}
 .series-cycle{stroke:var(--text);stroke-opacity:.34;stroke-width:1;stroke-dasharray:6 4}
 .series-hover{stroke:var(--text);stroke-opacity:.5;stroke-width:1;stroke-dasharray:3 3}

@@ -5,8 +5,10 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createPins } from './landing-pins.js';
 import { createSearch } from './landing-search.js';
 import { createCards } from './landing-cards.js';
-import { createSeries } from './landing-series.js?v=4';
-import { inertialSky, SIDEREAL_DAYS, DAY_MS, MOON_RADIUS_KM, EARTH_RADIUS_KM, SUN_RADIUS_KM, AU_KM } from './lunar-sky.js';
+import { createSeries, windowFor } from './landing-series.js';
+import { inertialSky, loadHorizons, onSkyChange, skySource, SOURCE_LABEL, SIDEREAL_DAYS, DAY_MS, MOON_RADIUS_KM, EARTH_RADIUS_KM, SUN_RADIUS_KM, AU_KM } from './core/sky.js';
+import { TerrainSource, GlobeGrid } from './core/terrain.js';
+import { createSiteData } from './ui/site-data.js';
 
 const world = document.getElementById('world');
 const canvas = document.getElementById('moon-canvas');
@@ -67,8 +69,8 @@ loader.load('assets/moon-normal.jpg', t => {
 }, undefined, done);
 
 // --- Sun and Earth -----------------------------------------------------------------
-// Frame: Moon-centred, axes fixed to the stars (inertialSky in lunar-sky.js, checked against JPL
-// Horizons). Everything that moves does so from one
+// Frame: Moon-centred, axes fixed to the stars (inertialSky in core/sky.js: Sun and Earth from JPL Horizons
+// where its table covers the date, the analytic model of lunar-sky.js otherwise). Everything that moves does so from one
 // clock (simMs). The scene is shown Moon-fixed (see placeBodies): the Moon stands still and the sky turns
 // around it once per sidereal month. In star-fixed terms: the Moon turns once per sidereal month, the Earth circles the Moon in the same
 // time and spins once per day, the Sun goes round once per year.
@@ -501,13 +503,41 @@ target.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' '
 document.querySelectorAll('[data-enter]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); enter(); }));
 addEventListener('pageshow', e => { if (e.persisted) { busy = false; flight = null; document.body.classList.remove('entering'); layout(); } });
 
+// Data behind the numbers. Each part arrives on its own and the page works with whatever is there:
+//   sky      JPL Horizons table (core/sky.js); until it has loaded, and outside 2027-2066, the analytic model
+//   globe    global height grid; gives every point a coarse horizon
+//   terrain  blocks around single points: files for the listed sites, the local server for any point
+// siteData (ui/site-data.js) knows the best ground for each marked point; dataVersion goes up whenever sky or
+// ground changed, so cards and plot redo their numbers.
+let skyVersion = 0;
+const siteData = createSiteData({ source: null });
+const dataVersion = () => siteData.version + skyVersion;
+onSkyChange(() => { skyVersion++; setTime(simMs); });
+loadHorizons().catch(err => console.warn('Horizons table not loaded, analytic sky model in use:', err.message));
+new TerrainSource().init().then(src => siteData.setSource(src));
+const globeReady = GlobeGrid.load().then(g => { siteData.setGlobe(g); return g; });
+globeReady.catch(err => console.warn('Global height grid not loaded:', err.message));
+// The span the numbers cover: Start to Stop of the sidebar, or two lunar days from the simulated time (paged on by
+// one with the clock). One window for the cards and the plot.
+let spanAnchor = null, spanWindow = null;
+function updateWindow() {
+  const fixed = stopMs < Infinity;
+  spanWindow = windowFor(fixed ? [loopMs, stopMs] : null, simMs, spanAnchor); spanAnchor = spanWindow.anchor; spanWindow.free = !fixed;
+}
+updateWindow();
+const limitInputs = { dark: document.getElementById('p-dark'), dte: document.getElementById('p-dte') };
+const limits = () => ({ dark: +limitInputs.dark.value, dte: +limitInputs.dte.value });
+
 // Landing-site pins (landing-pins.js): an HTML layer over the canvas, switched by "historical" in the sidebar.
 const pins = createPins({ root: document.getElementById('pins'), hero, moon, pivot, camera, R });
 // Info cards (landing-cards.js): a click on a marker opens a card with Sun and Earth at that site for the simulated time.
 // Time series (landing-series.js): solar elevation of the marked points over the time span, switched by "series" in the sidebar.
-const series = createSeries({ hero, marked: () => pins.marked(), now: () => simMs, span: () => stopMs < Infinity ? [loopMs, stopMs] : null,
-  setTime: ms => setTime(ms), onClose: () => document.querySelector('.param[data-param="series"]')?.click() });
-const cards = createCards({ hero, pins, now: () => simMs, disc: () => moonDisc, avoid: () => series.rect() });
+const series = createSeries({ hero, marked: () => pins.marked(), now: () => simMs, window: () => spanWindow,
+  setTime: ms => setTime(ms), onClose: () => document.querySelector('.param[data-param="series"]')?.click(),
+  ground: s => siteData.get(s), groundVersion: dataVersion });
+const cards = createCards({ hero, pins, now: () => simMs, disc: () => moonDisc, avoid: () => series.rect(),
+  ground: s => siteData.get(s, true), groundVersion: dataVersion, window: () => spanWindow, limits, onTerrain: s => openTerrain(s) });
+function openTerrain(site) { console.info('View terrain', site.name); }
 // Backspace = undo: removes the marker set last (and its card). Not while typing in a field.
 addEventListener('keydown', e => {
   if (e.key !== 'Backspace' || e.target.closest?.('input, textarea, select, [contenteditable]')) return;
@@ -543,6 +573,7 @@ function frame(now) {
     const p = Math.min((now - flight.t0) / flight.ms, 1), e = p * p * (3 - 2 * p);
     camera.position.z = flight.from + (flight.to - flight.from) * e;
   }
+  updateWindow();
   pins.update(bufW, bufH);
   cards.update();
   series.update();
@@ -605,10 +636,13 @@ requestAnimationFrame(frame);
   // Time span: Start and Stop (date and time, UTC) bound the clock and it repeats that span; Play/Pause runs it.
   // Changing Start jumps there. Clear empties the span: the clock then runs on freely.
   const play = document.getElementById('p-play'), clock = document.getElementById('p-now'), toDate = document.getElementById('p-to'), toTime = document.getElementById('p-to-time');
-  let shown = '';
+  let shown = '', shownSource = '';
+  const sourceEl = document.getElementById('p-source');
   onClock = () => {
     const t = new Date(simMs).toISOString().slice(0, 16).replace('T', ' ');   // UTC, as the heading of the block says
     if (t !== shown) clock.textContent = shown = t;
+    const src = skySource(simMs);                             // where Sun and Earth come from at this moment
+    if (src !== shownSource) { shownSource = src; sourceEl.textContent = 'Sun and Earth: ' + SOURCE_LABEL[src] + (src === 'analytic' ? ' (Horizons covers 2027 to 2066)' : ''); }
     if ((play.getAttribute('aria-pressed') === 'true') !== playing) { play.setAttribute('aria-pressed', playing); play.setAttribute('aria-label', playing ? 'Pause' : 'Play'); }
   };
   function readSpan(jump) {
@@ -640,7 +674,8 @@ requestAnimationFrame(frame);
     const on = b.getAttribute('aria-pressed') !== 'true';
     b.setAttribute('aria-pressed', on); layers[b.dataset.param]?.(on);
   }));
-  // Sliders show their value next to the label (placeholder inputs, no model behind them yet).
+  // The two limits: the longest time a site may go without the Sun and without the Earth. They show their value next to
+  // the label; the info cards compare the longest darkness and the longest outage of the time span with them.
   box.querySelectorAll('.prange').forEach(l => { const r = l.querySelector('input'), o = l.querySelector('output');
     const show = () => { o.textContent = r.value + ' h'; r.style.setProperty('--p', (r.value - r.min) / (r.max - r.min) * 100 + '%'); }; r.addEventListener('input', show); show(); });
   addEventListener('keydown', e => { if (e.key === 'Escape' && box.classList.contains('open')) tab.click(); });

@@ -1,5 +1,5 @@
 /* Info cards for markers on the 3D Moon (landing-cards.js). Values from tokens.css only.
-   Same surface as the parameter sidebar. One surface per card; the two groups (Sun, Earth) are
+   Same surface as the parameter sidebar. One surface per card; the groups (Sun, Earth, time span) are
    separated by spacing. A thin line joins each card to its marker. */
 .card-lines{position:absolute;inset:0;width:100%;height:100%;z-index:2;overflow:hidden;pointer-events:none}
 .card-lines line{stroke:var(--text);stroke-opacity:.34;stroke-width:1}
@@ -7,7 +7,7 @@
 .entering .cards,.entering .card-lines{display:none}
 /* Sized to be read at a glance beside the scene: 16 px rows, labels and values in full text colour
    (labels regular, values semibold), so nothing depends on the muted tone over a moving background. */
-.card{position:absolute;left:0;top:0;width:380px;padding:var(--s4) var(--s5) var(--s5);background:var(--surface);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);border:1px solid var(--line);border-radius:var(--r-outer);color:var(--text);font-size:16px;line-height:1.75;pointer-events:auto;cursor:grab;touch-action:none;user-select:none;animation:card-in var(--t-fast) var(--ease)}
+.card{position:absolute;left:0;top:0;width:380px;padding:var(--s4) var(--s5) var(--s5);background:var(--surface);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);border:1px solid var(--line);border-radius:var(--r-outer);color:var(--text);font-size:16px;line-height:1.75;max-height:calc(100% - 109px);overflow-y:auto;pointer-events:auto;cursor:grab;touch-action:none;user-select:none;animation:card-in var(--t-fast) var(--ease)}
 .card[hidden]{display:none}
 .card.moving{cursor:grabbing}
 .card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -21,10 +21,16 @@
 .card-close:hover{background:var(--surface-hover)}
 .card-close:focus-visible{outline:2px solid var(--accent);outline-offset:0}
 .card-sub{margin:0;font-variant-numeric:tabular-nums}
-.card dl{display:grid;grid-template-columns:auto 1fr;column-gap:var(--s4);margin:var(--s4) 0 0}
+.card dl{display:grid;grid-template-columns:auto 1fr;column-gap:var(--s4);margin:var(--s3) 0 0;line-height:1.6}
+/* Third group: the time span of the sidebar. Its heading is the span itself; a value over its limit is a warning. */
+.card-span{margin:var(--s3) 0 0;font-weight:600;font-variant-numeric:tabular-nums}
+.card dl.card-limits{margin-top:0}
+.card dd.over{color:#ff8a7f}
+/* What the numbers rest on: sky source and ground */
+.card-basis{margin:var(--s3) 0 0;font-size:13px;line-height:1.5;color:var(--text-muted)}
 .card dd{margin:0;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
-.card-terrain{display:block;width:100%;height:var(--hit);margin-top:var(--s5);padding:0;background:var(--field);border:1px solid transparent;border-radius:var(--r-inner);color:var(--text);font:500 16px var(--font-ui);cursor:pointer;transition:border-color var(--t-fast),background var(--t-fast)}
-.card-terrain:hover{background:rgb(255 255 255 / .14)}
-.card-terrain:focus-visible{border-color:var(--accent);outline:0}
+.card-terrain{display:block;width:100%;height:var(--hit);margin-top:var(--s4);padding:0;background:var(--accent);border:1px solid transparent;border-radius:var(--r-inner);color:var(--accent-ink);font:600 16px var(--font-ui);cursor:pointer;transition:opacity var(--t-fast)}
+.card-terrain:hover{opacity:.86}
+.card-terrain:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @keyframes card-in{from{opacity:0}}
 @media(prefers-reduced-motion:reduce){.card{animation:none}.card-close,.card-name,.card-terrain{transition:none}}

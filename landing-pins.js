@@ -39,7 +39,7 @@ export function createPins({ root, hero, moon, pivot, camera, R }) {
   function make(def) {
     const el = document.createElement('div'); el.className = 'pin'; el.hidden = true;
     el.innerHTML = '<div class="pin-names"></div><button type="button" class="pin-head">' + PIN_SVG + '</button>';
-    const s = { id: def.id, name: def.name, base: def.name, candidate: !!def.horizon, local: new THREE.Vector3(),
+    const s = { id: def.id, name: def.name, base: def.name, candidate: !!def.horizon, horizonFile: def.horizon || null, local: new THREE.Vector3(),
       el, head: el.lastChild, names: el.firstChild, count: el.querySelector('text'), key: '', members: null, x: 0, y: 0 };
     place(s, def.lat, def.lon);
     // One site: the pin selects it and opens its card. Several sites under one pin: the pin keeps the names open, a name does the same.

@@ -1,44 +1,45 @@
 // Info cards for markers on the landing-page Moon. A click on a marker opens a card beside the Moon,
 // joined to its marker by a thin line. The card shows the site's name (a field: type to rename any point;
-// empty gives the original name back) and, for the simulated time of the
-// scene: sub-solar and sub-Earth point, elevation of Sun and Earth, and the time until the next
-// sunrise/sunset and earthrise/earthset. Values come from siteSky (lunar-sky.js): analytic model,
-// smooth sphere, disc centre, no terrain. Several cards can be open to compare sites.
+// empty gives the original name back) and three groups of values:
+//   Sun and Earth at the simulated time: sub-point, elevation of the disc centre, height of the horizon in
+//     that direction, visible share of the disc, time until it next passes 50 % (rise or set)
+//   the time span of the sidebar: share of the hours with the Sun and with the Earth in view, the longest
+//     stretch without each, against the two limits of the sidebar
+//   what the numbers rest on: sky source and ground (5 m site profile, LDEM64 block, global grid, smooth sphere)
+// All values come from core/visibility.js with the horizon that ui/site-data.js has for the point; when
+// better ground arrives (a terrain block has loaded) the numbers are redone. Several cards can be open to
+// compare sites. "View terrain" opens the terrain view around the point.
 // Placement: a card opens on the side of the Moon its site is on, outside the disc, at the height of
 // the site; it moves up or down, then to the other side, then further out, until it overlaps no other
 // card and its line does not run under another card. Cards can be dragged (or moved with the arrow keys); a moved card stays where it was put.
 // While a site is behind the limb its marker, line and card are hidden; the card comes back with the site
-// (a card that was not moved by hand then looks for its place again). "View terrain" is a placeholder.
-import { siteSky, DAY_MS } from './lunar-sky.js';
+// (a card that was not moved by hand then looks for its place again).
+import { siteSky, DAY_MS, SOURCE_LABEL } from './core/sky.js';
+import { siteState, nextChange, spanMetrics, IN_VIEW, BASIS_LABEL, HOUR_MS } from './core/visibility.js';
 import { coordText } from './landing-pins.js';
 
-// Rise and set are searched in 2 h steps for 60 days, then in 12 h steps up to 19 years (one cycle of the
-// lunar nodes, so every libration state has occurred). Nothing found in that time is shown as "never".
-const HOUR = 3600000, SEARCH_MS = 19 * 365.25 * DAY_MS, FINE_MS = 60 * DAY_MS, REFRESH_MS = 200;
+// Rise and set (the disc passing 50 %) are searched hourly for 60 days, then in 6 h steps up to 19 years (one
+// cycle of the lunar nodes, so every libration state has occurred). Nothing found in that time is shown as "never".
+const HOUR = HOUR_MS, SEARCH_MS = 19 * 365.25 * DAY_MS, REFRESH_MS = 200;
+const MAX_SAMPLES = 9000;                                        // span metrics: hourly up to a year, coarser steps beyond
 const GAP = 48, BETWEEN = 12, EDGE = 16, TOP = 93, LEFT = 72;   // px; TOP clears the header, LEFT the Parameters tab
 const CLOSE_SVG = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8"/></svg>';
-const ROWS = '<dl><dt>Sub-solar point</dt><dd data-f="sunSub"></dd><dt>Solar elevation</dt><dd data-f="sunEl"></dd><dt data-f="sunLab"></dt><dd data-f="sunIn"></dd></dl>'
-  + '<dl><dt>Sub-Earth point</dt><dd data-f="earthSub"></dd><dt>Earth elevation</dt><dd data-f="earthEl"></dd><dt data-f="earthLab"></dt><dd data-f="earthIn"></dd></dl>';
+const body = (word, id) => '<dl><dt>Sub-' + (id === 'sun' ? 'solar' : 'Earth') + ' point</dt><dd data-f="' + id + 'Sub"></dd><dt>' + (id === 'sun' ? 'Solar' : 'Earth') + ' elevation</dt><dd data-f="' + id + 'El"></dd>'
+  + '<dt>Horizon below the ' + word + '</dt>'<dd data-f="' + id + 'Hor"></dd><dt>' + word + '\u2019s disc in view</dt><dd data-f="' + id + 'Frac"></dd><dt data-f="' + id + 'Lab"></dt><dd data-f="' + id + 'In"></dd></dl>';
+const ROWS = body('Sun', 'sun') + body('Earth', 'earth')
+  + '<p class="card-span" data-f="span"></p><dl class="card-limits"><dt>Sun in view</dt><dd data-f="sunShare"></dd><dt>Longest darkness</dt><dd data-f="sunGap"></dd>'
+  + '<dt>Earth in view</dt><dd data-f="earthShare"></dd><dt>Longest DTE outage</dt><dd data-f="earthGap"></dd></dl><p class="card-basis" data-f="basis"></p>';
 const clamp = (v, a, b) => Math.max(a, Math.min(v, Math.max(a, b)));
 const point = p => Math.abs(p[0]).toFixed(1) + '° ' + (p[0] < 0 ? 'S' : 'N') + ', ' + p[1].toFixed(1) + '° E';
 const angle = d => (d < 0 ? '−' : '+') + Math.abs(d).toFixed(1) + '°';
 const span = ms => { const h = Math.floor(ms / HOUR); return Math.floor(h / 24) + ' d ' + h % 24 + ' h'; };
-
-/** UTC time (ms) of the next change of sign of an elevation (key of siteSky) between ms and endMs, or null. */
-export function nextCrossing(ms, lat, lon, key, endMs = ms + SEARCH_MS) {
-  const up = siteSky(ms, lat, lon)[key] > 0;
-  for (let a = ms, t = ms + 2 * HOUR; a < endMs; a = t, t += (t - ms < FINE_MS ? 2 : 12) * HOUR) {
-    if ((siteSky(t, lat, lon)[key] > 0) === up) continue;
-    let lo = a, hi = t;
-    while (hi - lo > 60000) { const m = (lo + hi) / 2; if ((siteSky(m, lat, lon)[key] > 0) === up) lo = m; else hi = m; }
-    return hi;
-  }
-  return null;
-}
+const day = ms => new Date(ms).toISOString().slice(0, 10);
 
 /** hero: the hero element (cards live in it); pins: createPins api; now(): simulated UTC ms; disc(): Moon on screen {x, y, r} in hero px;
- *  avoid(): a rectangle {x, y, w, h} in hero px that new cards keep clear of (the time series panel), or null. */
-export function createCards({ hero, pins, now, disc, avoid }) {
+ *  avoid(): a rectangle {x, y, w, h} in hero px that new cards keep clear of (the time series panel), or null;
+ *  ground(site): the point for the calculation, from ui/site-data.js get(site, true); groundVersion(): changes when any ground changed;
+ *  window(): { a, b, free } the UTC span the metrics cover; limits(): { dark, dte } in hours; onTerrain(site): "View terrain" was pressed. */
+export function createCards({ hero, pins, now, disc, avoid, ground, groundVersion, window: spanWindow, limits, onTerrain }) {
   const NS = 'http://www.w3.org/2000/svg';
   const lines = document.createElementNS(NS, 'svg'); lines.setAttribute('class', 'card-lines'); lines.setAttribute('aria-hidden', 'true');
   const root = document.createElement('div'); root.className = 'cards';
@@ -90,6 +91,7 @@ export function createCards({ hero, pins, now, disc, avoid }) {
   function open(s) {
     const el = document.createElement('section'); el.className = 'card'; el.tabIndex = 0;
     el.innerHTML = '<header><input type="text" class="card-name" aria-label="Name of this point" autocomplete="off" spellcheck="false"><button type="button" class="card-close" aria-label="Close">' + CLOSE_SVG + '</button></header><p class="card-sub"></p>' + ROWS + '<button type="button" class="card-terrain">View terrain</button>';
+    el.querySelector('.card-terrain').addEventListener('click', () => onTerrain?.(s));
     const nameEl = el.querySelector('.card-name'), sub = el.querySelector('.card-sub'), base = s.base ??= s.name;
     const label = () => {
       nameEl.value = s.name; el.setAttribute('aria-label', s.name + ', Sun and Earth at this site');
@@ -103,7 +105,7 @@ export function createCards({ hero, pins, now, disc, avoid }) {
       if (e.key === 'Enter') nameEl.blur(); else if (e.key === 'Escape') { nameEl.value = s.name; nameEl.blur(); }
     });
     const line = document.createElementNS(NS, 'line'); lines.append(line);
-    const c = { site: s, el, line, f: {}, shown: {}, next: {}, x: 0, y: 0, w: 0, h: 0 };
+    const c = { site: s, el, line, f: {}, shown: {}, next: {}, over: {}, gv: -1, mKey: '', m: null, x: 0, y: 0, w: 0, h: 0 };
     el.querySelectorAll('[data-f]').forEach(n => { c.f[n.dataset.f] = n; });
     root.append(el); fill(c, now());
     c.w = el.offsetWidth; c.h = el.offsetHeight;
@@ -130,19 +132,39 @@ export function createCards({ hero, pins, now, disc, avoid }) {
   }
 
   function set(c, k, text) { if (c.shown[k] !== text) { c.shown[k] = text; c.f[k].textContent = text; } }
+  const st = { sun: {}, earth: {} };
   function fill(c, ms) {
-    const { lat, lon } = c.site, k = siteSky(ms, lat, lon);
-    set(c, 'sunSub', point(k.subSolar)); set(c, 'earthSub', point(k.subEarth));
-    set(c, 'sunEl', angle(k.sunElevDeg)); set(c, 'earthEl', angle(k.earthElevDeg));
-    for (const [body, key, word] of [['sun', 'sunElevDeg', 'Sun'], ['earth', 'earthElevDeg', 'Earth']]) {
-      let ev = c.next[body];
+    const { lat, lon } = c.site, g = ground(c.site), site = g.site, k = siteState(ms, site, st), sub = siteSky(ms, lat, lon);
+    const gv = groundVersion();
+    if (c.gv !== gv) { c.gv = gv; c.next = {}; c.mKey = ''; }                 // the ground changed: rise, set and span numbers are redone
+    set(c, 'sunSub', point(sub.subSolar)); set(c, 'earthSub', point(sub.subEarth));
+    for (const [id, word] of [['sun', 'Sun'], ['earth', 'Earth']]) {
+      const b = k[id], up = b.frac >= IN_VIEW;
+      set(c, id + 'El', angle(b.el)); set(c, id + 'Hor', angle(b.horizon)); set(c, id + 'Frac', Math.round(b.frac * 100) + ' %');
+      let ev = c.next[id];
       // "never" found from ev.from on: after a jump back only the stretch up to ev.from has to be searched
-      if (ev && !ev.at && ms < ev.from && !nextCrossing(ms, lat, lon, key, ev.from)) ev.from = ms;
-      if (!ev || ms < ev.from || ms >= ev.redo) { const at = nextCrossing(ms, lat, lon, key); ev = c.next[body] = { from: ms, at, redo: at ?? ms + SEARCH_MS / 2 }; }
-      const up = k[key] > 0;
-      set(c, body + 'Lab', ev.at ? word + (up ? 'set in' : 'rise in') : word);
-      set(c, body + 'In', ev.at ? span(ev.at - ms) : up ? 'never sets' : 'never rises');
+      if (ev && !ev.at && ms < ev.from && !nextChange(ms, site, id, ev.from)) ev.from = ms;
+      if (!ev || ms < ev.from || ms >= ev.redo) { const at = nextChange(ms, site, id, ms + SEARCH_MS); ev = c.next[id] = { from: ms, at, redo: at ?? ms + SEARCH_MS / 2 }; }
+      set(c, id + 'Lab', ev.at ? word + (up ? 'set in' : 'rise in') : word);
+      set(c, id + 'In', ev.at ? span(ev.at - ms) : up ? 'never sets' : 'never rises');
     }
+    // the time span: metrics once per span and ground, limits compared on every refresh
+    const w = spanWindow(), mKey = w.a + '|' + w.b;
+    if (c.mKey !== mKey) {
+      c.mKey = mKey;
+      const step = Math.max(1, Math.ceil((w.b - w.a) / HOUR / MAX_SAMPLES)) * HOUR;
+      c.m = spanMetrics(site, w.a, w.b, step); c.m.stepH = step / HOUR;
+    }
+    const m = c.m, lim = limits();
+    set(c, 'span', (w.free ? 'Next two lunar days, ' : '') + day(m.startMs) + ' to ' + day(m.endMs) + ' UTC');
+    for (const [id, limit] of [['sun', lim.dark], ['earth', lim.dte]]) {
+      const v = m[id], gap = Math.round(v.longestGapHours), over = gap > limit;
+      set(c, id + 'Share', (v.share * 100).toFixed(1) + ' % of ' + Math.round(v.hours) + ' h');
+      set(c, id + 'Gap', (v.longestGapOpen ? '≥ ' : '') + gap + ' h · limit ' + limit + ' h');
+      if (c.over[id] !== over) { c.over[id] = over; c.f[id + 'Gap'].classList.toggle('over', over); c.f[id + 'Gap'].title = over ? 'Longer than the limit set in the sidebar' : ''; }
+    }
+    set(c, 'basis', 'Sky: ' + (m.source === 'mixed' ? 'JPL Horizons and analytic model' : SOURCE_LABEL[m.source]) + '. Ground: ' + BASIS_LABEL[g.basis]
+      + (g.loading ? ', loading terrain …' : g.error ? ' (terrain not loaded: ' + g.error + ')' : '') + '.' + (m.stepH > 1 ? ' Sampled every ' + m.stepH + ' h.' : ''));
   }
 
   /** Call once per frame after pins.update(). */

@@ -85,6 +85,7 @@ body.side-drag,body.side-drag *{transition:none!important;cursor:col-resize!impo
 .pcopy:hover{background:rgb(255 255 255 / .14)}
 .pcopy:focus-visible,.pcopy.done{border-color:var(--accent);outline:0}
 .phelp{margin:0;font-size:calc(var(--u) * 1.7);line-height:1.3;color:#ff8a7f}.phelp:empty{display:none}
+.pnote{margin:0;font-size:calc(var(--u) * 1.8);line-height:1.3;color:var(--text-muted)}.pnote:empty{display:none}
 .pline{display:flex;align-items:center;gap:calc(var(--u) * 1.2)}
 .pline label{flex:none;width:calc(var(--u) * 6.5);font-size:calc(var(--u) * 2.2);color:var(--text-muted)}
 .prange{cursor:pointer}

@@ -6,7 +6,10 @@
 // line marks the end of the first lunar day. The window moves on by one lunar day when the clock passes that line.
 // The panel opens top right and can be dragged (or moved with the arrow keys); a moved panel stays where it was put.
 // Its four corners resize it: wider, narrower, taller, lower (the plot takes the height). The plot is redrawn to fit.
-// Values come from siteSky (lunar-sky.js): analytic model, smooth sphere, centre of the Sun's disc, no terrain.
+// Values come from core/visibility.js: elevation of the centre of the Sun's disc above the horizon of the point in
+// that direction (the terrain skyline where ui/site-data.js has one, the horizontal otherwise). Zero is the skyline.
+// Under the plot one thin band per point is filled where at least half of the Sun's disc is in view: the hours
+// with sunlight. When better ground arrives for a point its line and band are redrawn.
 // Elevation axis: always -90 to +90 deg in steps of 30, so every plot reads the same. Time axis: two-line
 // labels (day and month, the year below where it starts or changes). No describing text in the panel.
 // A dot on every line marks the value at the time that is read (simulated time, or the pointer over the plot).
@@ -14,11 +17,13 @@
 // in the legend; a click sets the clock there.
 // Colours: fixed order, validated for the dark surface (dataviz palette, 8 slots). A point keeps its colour
 // while it is marked. More than 8 marked points: the first 8 are drawn, the panel says how many are left out.
-import { siteSky, DAY_MS, SYNODIC_DAYS } from './lunar-sky.js';
+import { DAY_MS, SYNODIC_DAYS } from './core/sky.js';
+import { siteState, IN_VIEW } from './core/visibility.js';
 
 const COLORS = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#0ca30c', '#9085e9', '#e66767'];
 const NS = 'http://www.w3.org/2000/svg', HOUR = 3600000, CYCLE_MS = SYNODIC_DAYS * DAY_MS;
-const M = { l: 56, r: 16, t: 12, b: 48 };                 // plot margins, px
+const M = { l: 56, r: 16, t: 12, b: 48 };                 // plot margins, px; b grows by the light bands
+const BASE_B = 48, BAND_H = 4, BAND_GAP = 2, BAND_TOP = 9; // light bands between the time axis and its labels
 const Y_MAX = 90, Y_STEP = 30;                          // elevation axis, deg
 const EDGE = 16, TOP = 93, MIN_W = 420, MIN_PLOT_H = 220, FREE_CYCLES = 2;             // px: gap to the hero's edge, clear of the header; lunar days shown without a span                 // plot margins, px
 const PER_CYCLE = 48, MIN_N = 240, MAX_N = 4000;        // samples: 48 per lunar day, within these limits
@@ -37,11 +42,12 @@ export function windowFor(span, t, anchor) {
   else if (t >= anchor + CYCLE_MS) anchor += CYCLE_MS;
   return { a: anchor, b: anchor + FREE_CYCLES * CYCLE_MS, anchor, cycle: anchor + CYCLE_MS };
 }
-/** Solar elevation (deg) of one site at n + 1 evenly spaced times from a to b. */
-export function sample(lat, lon, a, b, n) {
-  const y = new Float64Array(n + 1);
-  for (let i = 0; i <= n; i++) y[i] = siteSky(a + (b - a) * i / n, lat, lon).sunElevDeg;
-  return y;
+/** For one site (makeSite of core/visibility.js) at n + 1 evenly spaced times from a to b: y = elevation of the Sun's
+ *  centre above its horizon (deg), lit = at least half of the disc in view. */
+export function sample(site, a, b, n) {
+  const y = new Float64Array(n + 1), lit = new Uint8Array(n + 1), st = { sun: {}, earth: {} };
+  for (let i = 0; i <= n; i++) { const k = siteState(a + (b - a) * i / n, site, st).sun; y[i] = k.el - k.horizon; lit[i] = k.frac >= IN_VIEW ? 1 : 0; }
+  return { y, lit };
 }
 export const sampleCount = (a, b) => Math.round(Math.max(MIN_N, Math.min(MAX_N, (b - a) / CYCLE_MS * PER_CYCLE)));
 /** Axis ticks: first step of the list that gives at most `most` ticks between lo and hi. */
@@ -53,20 +59,21 @@ export function ticks(lo, hi, steps, most) {
 
 /**
  * hero: the hero element (the panel lives in it); marked(): the marked sites ({ id, name, lat, lon });
- * now(): simulated UTC ms; span(): [startMs, stopMs] of the sidebar or null; setTime(ms): jump the clock;
- * onClose(): the panel's close button was pressed.
+ * now(): simulated UTC ms; window(): the time window { a, b, cycle? } (windowFor above, kept by the page so cards
+ * and plot cover the same span); setTime(ms): jump the clock; onClose(): the panel's close button was pressed;
+ * ground(site): the point for the calculation (ui/site-data.js get); groundVersion(): changes when any ground changed.
  */
-export function createSeries({ hero, marked, now, span, setTime, onClose }) {
+export function createSeries({ hero, marked, now, window: timeWindow, setTime, onClose, ground, groundVersion }) {
   const el = document.createElement('section'); el.className = 'series'; el.hidden = true; el.tabIndex = 0;
-  el.setAttribute('aria-label', 'Solar elevation over time for the marked points');
-  el.innerHTML = '<header><h2>Solar elevation</h2><output class="series-time"></output><button type="button" class="series-close" aria-label="Close">' + CLOSE_SVG + '</button></header>'
+  el.setAttribute('aria-label', 'Solar elevation above the horizon over time for the marked points');
+  el.innerHTML = '<header><h2>Solar elevation above the horizon</h2><output class="series-time"></output><button type="button" class="series-close" aria-label="Close">' + CLOSE_SVG + '</button></header>'
     + '<svg class="series-plot" role="img"></svg><ul class="series-legend"></ul>';
   hero.append(el);
   const timeEl = el.querySelector('.series-time'), plot = el.querySelector('.series-plot'), legend = el.querySelector('ul');
   el.querySelector('.series-close').addEventListener('click', () => onClose?.());
 
   const slots = new Map();                       // site id -> colour slot, kept while the site is marked
-  let on = true, anchor = null, key = '', win = null, shown = [], hoverMs = null, lastRead = 0, readKey = '';
+  let on = true, key = '', win = null, shown = [], hoverMs = null, lastRead = 0, readKey = '';
   let nowLine = null, hoverLine = null, W = 0, H = 0;
   // Position in hero px. Until the panel is moved by hand it sits top right and follows the hero's width.
   const at = { x: 0, y: 0, manual: false };
@@ -121,7 +128,10 @@ export function createSeries({ hero, marked, now, span, setTime, onClose }) {
   function draw(sites, left) {
     W = plot.clientWidth; H = plot.clientHeight;
     plot.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
-    const n = sampleCount(win.a, win.b), data = sites.map(s => sample(s.lat, s.lon, win.a, win.b, n));
+    const bands = sites.length * (BAND_H + BAND_GAP) + BAND_GAP;
+    M.b = BASE_B + bands;
+    for (const s of sites) s.calc = ground(s).site;
+    const n = sampleCount(win.a, win.b), data = sites.map(s => sample(s.calc, win.a, win.b, n));
     const spanDays = (win.b - win.a) / DAY_MS, xt = ticks(win.a / DAY_MS, win.b / DAY_MS, X_STEPS, Math.max(2, Math.floor((W - M.l - M.r) / 96)));
     const kids = [];
     for (let v = -Y_MAX; v <= Y_MAX; v += Y_STEP) {
@@ -135,14 +145,25 @@ export function createSeries({ hero, marked, now, span, setTime, onClose }) {
       const anchor = x > W - M.r - 28 ? 'end' : x < M.l + 28 ? 'start' : 'middle';
       kids.push(svgEl('line', { class: 'series-grid', x1: x.toFixed(1), x2: x.toFixed(1), y1: M.t, y2: H - M.b }));
       kids.push(svgEl('line', { class: 'series-axis', x1: x.toFixed(1), x2: x.toFixed(1), y1: H - M.b, y2: H - M.b + 5 }));
-      const t = svgEl('text', { class: 'series-tick', x: x.toFixed(1), y: H - M.b + 21, 'text-anchor': anchor }); t.textContent = up; kids.push(t);
-      if (low !== lower) { lower = low; const u = svgEl('text', { class: 'series-tick series-tick2', x: x.toFixed(1), y: H - M.b + 40, 'text-anchor': anchor }); u.textContent = low; kids.push(u); }
+      const t = svgEl('text', { class: 'series-tick', x: x.toFixed(1), y: H - M.b + 21 + bands, 'text-anchor': anchor }); t.textContent = up; kids.push(t);
+      if (low !== lower) { lower = low; const u = svgEl('text', { class: 'series-tick series-tick2', x: x.toFixed(1), y: H - M.b + 40 + bands, 'text-anchor': anchor }); u.textContent = low; kids.push(u); }
     }
     kids.push(svgEl('path', { class: 'series-axis', d: 'M' + M.l + ' ' + M.t + 'V' + (H - M.b) + 'H' + (W - M.r) }));     // the two axes
     sites.forEach((s, i) => {
       let d = '';
-      for (let k = 0; k <= n; k++) d += (k ? 'L' : 'M') + (M.l + k / n * (W - M.l - M.r)).toFixed(1) + ' ' + yOf(data[i][k]).toFixed(1);
+      for (let k = 0; k <= n; k++) d += (k ? 'L' : 'M') + (M.l + k / n * (W - M.l - M.r)).toFixed(1) + ' ' + yOf(data[i].y[k]).toFixed(1);
       kids.push(svgEl('path', { class: 'series-line', d, stroke: COLORS[slots.get(s.id)] }));
+      // light band: a faint track over the whole span, filled where the Sun is in view
+      const top = H - M.b + BAND_TOP + i * (BAND_H + BAND_GAP), xk = k => M.l + Math.max(0, Math.min(1, k / n)) * (W - M.l - M.r), lit = data[i].lit;
+      kids.push(svgEl('rect', { class: 'series-track', x: M.l, y: top, width: W - M.l - M.r, height: BAND_H }));
+      let run = '';
+      for (let k = 0; k <= n; k++) if (lit[k] && (k === 0 || !lit[k - 1])) {
+        let e = k; while (e < n && lit[e + 1]) e++;
+        const x0 = xk(k - .5), x1 = xk(e + .5);
+        run += 'M' + x0.toFixed(1) + ' ' + top + 'H' + x1.toFixed(1) + 'V' + (top + BAND_H) + 'H' + x0.toFixed(1) + 'Z';
+        k = e;
+      }
+      if (run) kids.push(svgEl('path', { class: 'series-lit', d: run, fill: COLORS[slots.get(s.id)] }));
     });
     if (win.cycle) {                                       // end of the first lunar day: the curves repeat from here
       const x = xOf(win.cycle).toFixed(1);
@@ -153,7 +174,7 @@ export function createSeries({ hero, marked, now, span, setTime, onClose }) {
     kids.push(hoverLine, nowLine);
     for (const s of sites) { s.dot = svgEl('circle', { class: 'series-dot', r: 5, fill: COLORS[slots.get(s.id)] }); kids.push(s.dot); }
     plot.replaceChildren(...kids);
-    plot.setAttribute('aria-label', 'Line chart, solar elevation in degrees from ' + stamp(win.a) + ' to ' + stamp(win.b) + ': ' + sites.map(s => s.name).join(', '));
+    plot.setAttribute('aria-label', 'Line chart, solar elevation above the local horizon in degrees, with bands marking the hours of sunlight, from ' + stamp(win.a) + ' to ' + stamp(win.b) + ': ' + sites.map(s => s.name).join(', '));
     legend.replaceChildren(...sites.map(s => {
       const li = document.createElement('li'); li.innerHTML = '<i></i><span></span><b></b>';
       li.firstChild.style.background = COLORS[slots.get(s.id)]; li.children[1].textContent = s.name; s.valueEl = li.lastChild;
@@ -162,6 +183,7 @@ export function createSeries({ hero, marked, now, span, setTime, onClose }) {
     if (left) { const li = document.createElement('li'); li.className = 'series-more'; li.textContent = left + ' more marked point' + (left > 1 ? 's' : '') + ' not drawn'; legend.append(li); }
     readKey = '';
   }
+  const readState = { sun: {}, earth: {} };
   /** Legend values and the time in the header: at the pointer while it is over the plot, otherwise at the simulated time. */
   function read(ms) {
     const k = Math.round(ms / 60000) + '|' + (hoverMs != null);
@@ -169,7 +191,7 @@ export function createSeries({ hero, marked, now, span, setTime, onClose }) {
     timeEl.textContent = stamp(ms);
     const inside = ms >= win.a && ms <= win.b, x = inside ? xOf(ms).toFixed(1) : 0;
     for (const s of shown) {
-      const v = siteSky(ms, s.lat, s.lon).sunElevDeg;
+      const k = siteState(ms, s.calc, readState).sun, v = k.el - k.horizon;
       s.valueEl.textContent = angle(v);
       s.dot.style.display = inside ? '' : 'none';
       if (inside) { s.dot.setAttribute('cx', x); s.dot.setAttribute('cy', yOf(v).toFixed(1)); }
@@ -192,9 +214,9 @@ export function createSeries({ hero, marked, now, span, setTime, onClose }) {
     for (const s of all) if (!slots.has(s.id) && slots.size < COLORS.length) slots.set(s.id, COLORS.findIndex((_, i) => ![...slots.values()].includes(i)));
     const sites = all.filter(s => slots.has(s.id));
     if (el.hidden !== !sites.length) { el.hidden = !sites.length; key = ''; }
-    if (!sites.length) { win = null; anchor = null; return; }
-    const t = now(), sp = span(), w = windowFor(sp, t, anchor); anchor = w.anchor;
-    const k = w.a + '|' + w.b + '|' + plot.clientWidth + 'x' + plot.clientHeight + '|' + sites.map(s => s.id + ':' + slots.get(s.id) + ':' + s.lat + ':' + s.lon + ':' + s.name).join();
+    if (!sites.length) { win = null; return; }
+    const t = now(), w = timeWindow();
+    const k = w.a + '|' + w.b + '|' + groundVersion() + '|' + plot.clientWidth + 'x' + plot.clientHeight + '|' + sites.map(s => s.id + ':' + slots.get(s.id) + ':' + s.lat + ':' + s.lon + ':' + s.name).join();
     if (k !== key) {
       key = k; win = w; shown = sites;
       draw(sites, all.length - sites.length);
