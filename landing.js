@@ -8,6 +8,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createPins } from './landing-pins.js';
 import { createSearch } from './landing-search.js';
 import { createCards } from './landing-cards.js';
+import { createCompare } from './landing-compare.js';
 import { createSeries, windowFor } from './landing-series.js';
 import { createArea, LIMIT_MAX_H } from './landing-area.js';
 import { createExposure } from './landing-exposure.js';
@@ -703,8 +704,13 @@ function showSeries(on) { series.show(on); seriesToggle.setAttribute('aria-press
 seriesToggle.addEventListener('click', e => { e.preventDefault(); showSeries(seriesToggle.getAttribute('aria-pressed') !== 'true'); if (!expanded) expand(); });
 seriesToggle.addEventListener('keydown', e => { if (e.key === ' ') { e.preventDefault(); seriesToggle.click(); } });
 let landAt = ms => setTime(ms);                       // a square of a card's delay row; replaced by the time bar block below, which also moves a set span
-const cards = createCards({ hero, pins, now: () => simMs, disc: () => moonDisc, avoid: () => [series.rect(), panelRect(timebarEl), panelRect(legendBox)],
+const cards = createCards({ hero, pins, now: () => simMs, disc: () => moonDisc, avoid: () => [series.rect(), compare.rect(), panelRect(timebarEl), panelRect(legendBox)],
   ground: s => siteData.get(s, true), groundVersion: dataVersion, window: () => limitWindow, limits, onTerrain: s => openTerrain(s), setTime: ms => landAt(ms) });
+// Comparison (landing-compare.js): the numbers of the open cards side by side with a verdict. Shown only through "Compare" in the header.
+const compare = createCompare({ hero, marked: () => pins.marked(), metrics: () => cards.metrics(), limits, onClose: () => showCompare(false) });
+const compareToggle = document.getElementById('compare-toggle');
+function showCompare(on) { compare.show(on); compareToggle.setAttribute('aria-pressed', on); }
+compareToggle.addEventListener('click', e => { e.preventDefault(); showCompare(compareToggle.getAttribute('aria-pressed') !== 'true'); if (!expanded) expand(); });
 
 // --- Lunar surface: relief mesh, surface modes, layers, legend ---------------------------
 // "Surface" of the sidebar chooses what the ground shows; the layers lie over it. The same choice holds in
@@ -1012,6 +1018,7 @@ function frame(now) {
     if (Math.abs(moonDisc.r - cardDiscR) > .5) { cardDiscR = moonDisc.r; cards.relayout(); }
   }
   series.update();
+  compare.update();
   if (scope === 'terrain') {
     // Sun and Earth as the site sees them; light and shadows of the ground follow
     const st = siteState(simMs, terrainCalc, tState);

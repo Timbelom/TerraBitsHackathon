@@ -1,0 +1,33 @@
+/* Comparison of the marked points (landing-compare.js). Values from tokens.css only. Same surface as the info cards
+   and the time series; opens top left of the scene and can be dragged. One surface: rows and columns are set apart by
+   spacing, the head by weight. The best value of a row carries a tick, so it does not rest on colour. */
+.compare{position:absolute;left:0;top:0;z-index:5;max-width:calc(100% - 2 * var(--s4));padding:var(--s4) var(--s5) var(--s5);background:var(--surface);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);border:1px solid var(--line);border-radius:var(--r-outer);color:var(--text);font-family:var(--font-ui);font-size:16px;line-height:1.6;user-select:none;cursor:grab;touch-action:none;animation:compare-in var(--t-fast) var(--ease)}
+.compare[hidden],.entering .compare{display:none}
+.compare.moving{cursor:grabbing}
+.compare:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.compare header{display:flex;align-items:center;gap:var(--s3)}
+.compare h2{flex:1;margin:0;font:600 20px var(--font-ui);letter-spacing:0}
+.compare-close{flex:none;display:grid;place-items:center;width:36px;height:36px;margin-right:calc(-1 * var(--s2));padding:0;background:none;border:0;border-radius:var(--r-inner);color:var(--text);cursor:pointer;transition:background var(--t-fast)}
+.compare-close svg{width:14px;height:14px}
+.compare-close:hover{background:var(--surface-hover)}
+.compare-close:focus-visible{outline:2px solid var(--accent);outline-offset:0}
+/* The verdict: the one sentence to take away, in the weight of a value */
+.compare-verdict{margin:var(--s2) 0 0;font-weight:600;font-variant-numeric:tabular-nums}
+.compare-span{margin:var(--s1) 0 0;font-size:14px;line-height:20px;color:var(--text-muted);font-variant-numeric:tabular-nums}
+.compare-scroll{margin-top:var(--s3);overflow-x:auto}
+.compare table{width:100%;border-collapse:collapse}
+.compare th,.compare td{padding:0 0 0 var(--s4);text-align:right;vertical-align:top;font-variant-numeric:tabular-nums;white-space:nowrap}
+.compare thead th{padding-bottom:var(--s2);font-weight:600;white-space:normal;vertical-align:bottom;line-height:1.3;min-width:128px}
+.compare tbody th{padding-left:0;text-align:left;font-weight:400}
+.compare tbody td{font-weight:600}
+.compare td.compare-text,.compare-plain td{font-weight:400}
+.compare-plain th,.compare-plain td{padding-top:var(--s2);font-size:14px;color:var(--text-muted)}
+.compare td.compare-none{font-weight:400;color:var(--text-muted);vertical-align:middle}
+.compare-best svg{width:14px;height:14px;margin-right:var(--s1);vertical-align:-1px}
+.compare-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+/* Fewer than two marked points: a line of text instead of the table */
+.compare-empty{display:none;margin:var(--s3) 0 0;color:var(--text-muted)}
+.compare.empty{width:auto}
+.compare.empty .compare-empty{display:block}.compare.empty .compare-verdict,.compare.empty .compare-span,.compare.empty .compare-scroll{display:none}
+@keyframes compare-in{from{opacity:0}}
+@media(prefers-reduced-motion:reduce){.compare{animation:none}.compare-close{transition:none}}

@@ -271,7 +271,7 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
     if (c.dShown === key) return; c.dShown = key;
     const v = delayVerdict(t, lim), [lead, text] = c.delay.lastChild.children, dur = length(t.missionMs);
     c.delay.classList.toggle('coarse', coarse); c.delay.firstChild.hidden = !v;
-    c.verdict = v && !coarse ? v : null;
+    c.verdict = v;
     lead.textContent = v ? dur + ' mission: ' : '';
     text.textContent = !v ? 'Set a limit in the sidebar to see how much delay this site tolerates.' : coarse ? 'coarse ground, open the terrain for a reliable answer' : delayText(v);
     text.className = !v || coarse || v.holds === 0 ? 'plain' : v.holds < 0 ? 'bad' : 'good';   // no slack at all is neither in the site's favour nor against it
@@ -370,5 +370,22 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
       if (pts) c.line.setAttribute('points', pts.map(v => v.toFixed(1)).join(' '));
     }
   }
-  return { update, open, close, dock, relayout, fit, count: () => cards.size, has: id => cards.has(id) };
+  /**
+   * The numbers of the open cards, for the comparison (landing-compare.js): per card id and name of the site, the span the
+   * numbers cover (startMs, endMs, free), sun and earth as in spanMetrics() (share, longestGapHours, longestGapOpen), the
+   * mission of the delay row (landingMs, missionMs) with its verdict (delay: { holds, all }, null with no limit set), and the
+   * ground (basis, ground: its name on the card, coarse). A card that is not on screen (its site behind the limb, or
+   * another card docked in the terrain view) is brought up to date first.
+   */
+  function metrics() {
+    const ms = now(), free = !!spanWindow().free, out = [];
+    for (const c of cards.values()) {
+      if (c.el.hidden) { fill(c, ms); if (c.dKey !== c.dWant) { delay(c); paintDelay(c, ground(c.site).basis, limits()); } }
+      const g = ground(c.site), v = c.verdict;
+      out.push({ id: c.site.id, name: c.site.name, free, startMs: c.m.startMs, endMs: c.m.endMs, sun: c.m.sun, earth: c.m.earth, landingMs: c.d.landingMs, missionMs: c.d.missionMs,
+        delay: v ? { holds: v.holds, all: v.all } : null, basis: g.basis, ground: groundName(g), coarse: isCoarse(g.basis) });
+    }
+    return out;
+  }
+  return { update, open, close, dock, relayout, fit, metrics, count: () => cards.size, has: id => cards.has(id) };
 }
