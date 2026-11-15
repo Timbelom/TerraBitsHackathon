@@ -36,6 +36,10 @@ def main():
     ldem = lunar.Ldem(path)
     print(ldem.describe())
     sites = json.loads(Path(args.sites).read_text(encoding="utf-8"))["sites"]
+    # The landing spot of the guided demo (landing-demo.js): a free point, not a listed site. Its block is built
+    # here too so that the demo shows the same ground and the same numbers without the local server.
+    sites = sites + [{"id": "demo", "name": "Landing spot of the guided demo (free point, plain 32 km from the south pole)",
+                      "lat": -88.9481, "lon": 75.048}]
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 

@@ -141,18 +141,46 @@ if (uAreaOn > .5) {
     const r0 = Math.min(Math.floor(rf), h - 2), fr = rf - r0, cFloor = Math.floor(cf), fc = cf - cFloor, c0 = ((cFloor % w) + w) % w, c1 = (c0 + 1) % w;
     return (v[r0 * w + c0] * (1 - fc) + v[r0 * w + c1] * fc) * (1 - fr) + (v[(r0 + 1) * w + c0] * (1 - fc) + v[(r0 + 1) * w + c1] * fc) * fr;
   }
-  /** 'relief' | 'imagery' | 'elevation' | the name of a value grid. Returns the mode that is now shown. */
-  function setMode(m) {
-    if (m === 'imagery' && !materials.imagery.map) m = 'relief';
-    if (m !== 'relief' && m !== 'imagery' && m !== 'elevation' && !layers.has(m)) m = 'relief';
+  // A change of surface can be a cross-fade: the new surface is drawn over the old one on a second mesh of the
+  // same geometry, its opacity runs from 0 to 1 (tick), then it becomes the surface. Asking for the old surface
+  // again while it runs turns the fade round. Two data surfaces share one material and colour set, so between
+  // them the change is at once.
+  const isLit = m => m === 'relief' || m === 'imagery', materialOf = m => isLit(m) ? materials[m] : materials.data;
+  const over = new THREE.Mesh(geometry, materials.relief); over.visible = false; over.renderOrder = 1; group.add(over);
+  let fade = null;                   // { from, to, k: 0..1, dir: 1 | -1, ms }
+  function settle(m) {
+    if (fade) { const mat = over.material; mat.transparent = false; mat.opacity = 1; mat.depthWrite = true; over.visible = false; fade = null; }
     mode = m;
-    const lit = m === 'relief' || m === 'imagery';
-    if (!lit) paint(m);
-    mesh.material = lit ? materials[m] : materials.data;
-    mesh.castShadow = mesh.receiveShadow = lit && !horizon.uHorizonOn.value;
+    if (!isLit(m)) paint(m);
+    mesh.material = materialOf(m);
+    mesh.castShadow = mesh.receiveShadow = isLit(m) && !horizon.uHorizonOn.value;
     contours.visible = contoursOn && m === 'elevation';
     if (contours.visible) buildContours();
+  }
+  /** 'relief' | 'imagery' | 'elevation' | the name of a value grid; fadeMs > 0 cross-fades to it. Returns the mode that is now shown (or faded to). */
+  function setMode(m, fadeMs = 0) {
+    if (m === 'imagery' && !materials.imagery.map) m = 'relief';
+    if (m !== 'relief' && m !== 'imagery' && m !== 'elevation' && !layers.has(m)) m = 'relief';
+    if (fade && m === fade.to) { fade.dir = 1; mode = m; return m; }
+    if (fade && m === fade.from && fadeMs > 0) { fade.dir = -1; fade.ms = fadeMs; mode = m; return m; }
+    if (fade) settle(fade.dir > 0 ? fade.to : fade.from);
+    if (!(fadeMs > 0) || materialOf(m) === mesh.material) { settle(m); return m; }
+    fade = { from: mode, to: m, k: 0, dir: 1, ms: fadeMs };
+    mode = m;
+    if (!isLit(m)) paint(m);
+    contours.visible = false;
+    const mat = materialOf(m); mat.transparent = true; mat.opacity = 0; mat.depthWrite = false;
+    over.material = mat; over.receiveShadow = mesh.receiveShadow; over.visible = true;
     return m;
+  }
+  /** Moves a running cross-fade on by dtMs. Returns true while one runs. */
+  function tick(dtMs) {
+    if (!fade) return false;
+    fade.k += fade.dir * dtMs / fade.ms;
+    if (fade.k >= 1) { settle(fade.to); return false; }
+    if (fade.k <= 0) { settle(fade.from); return false; }
+    over.material.opacity = fade.k * fade.k * (3 - 2 * fade.k);
+    return true;
   }
   /** The skyline map: bytes (azimuth layers of height x width, row 0 south) and its description file. */
   function setHorizon(bytes, meta) {
@@ -160,7 +188,7 @@ if (uAreaOn > .5) {
     t.format = THREE.RedFormat; t.type = THREE.UnsignedByteType; t.minFilter = t.magFilter = THREE.LinearFilter;
     t.wrapS = t.wrapR = THREE.RepeatWrapping; t.wrapT = THREE.ClampToEdgeWrapping; t.unpackAlignment = 1; t.needsUpdate = true;
     horizon.uHorizon.value = t; horizon.uHorizonMin.value = meta.min_deg; horizon.uHorizonSpan.value = meta.span_deg; horizon.uHorizonOn.value = 1;
-    mesh.castShadow = mesh.receiveShadow = false;
+    mesh.castShadow = mesh.receiveShadow = over.receiveShadow = false;
   }
   /** The area within the limits: one byte per cell (above 127 = within; row 0 = southernmost, column 0 = longitude -180), or null for none. */
   function setArea(mask, width, heightCells) {
@@ -282,7 +310,7 @@ if (uAreaOn > .5) {
   }
   return {
     group, mesh, detail, triangles: idx.length / 3, range: { minM, maxM },
-    setMode, get mode() { return mode; }, setAlbedo, setHorizon, setSun, get hasHorizon() { return horizon.uHorizonOn.value > 0; }, setValues, valueAt, hasLayer: name => layers.has(name), setArea,
+    setMode, tick, get mode() { return mode; }, setAlbedo, setHorizon, setSun, get hasHorizon() { return horizon.uHorizonOn.value > 0; }, setValues, valueAt, hasLayer: name => layers.has(name), setArea,
     setGraticule: on => { graticule.visible = on; }, setSquares, markSquare, setContours,
     squareAt: (latDeg, lonDeg) => squareAt(squareList, unitFromLatLon(latDeg, lonDeg)), squares: squareList,
     raycast, dispose,

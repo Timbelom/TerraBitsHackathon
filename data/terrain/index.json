@@ -101,6 +101,15 @@
    "file": "im2.bin",
    "bytes": 1541666,
    "sha256": "a1c2284b8d34872c083747ed5a8186c99c9c9452ccc236339836966f3edd4719"
+  },
+  {
+   "id": "demo",
+   "name": "Landing spot of the guided demo (free point, plain 32 km from the south pole)",
+   "lat": -88.9481,
+   "lon": 75.048,
+   "file": "demo.bin",
+   "bytes": 1541666,
+   "sha256": "e225d69828e47f3c03b6dc38e2e17f29d4d5eee119344ec020527177504d3567"
   }
  ]
 }

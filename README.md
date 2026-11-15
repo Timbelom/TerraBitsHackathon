@@ -23,6 +23,19 @@ with the date: sunlight for power, Earth in view for direct radio contact.
 - **Surfaces and layers:** relief with shadows, imagery, elevation, mean sunlight and Earth visibility of a
   year; latitude/longitude grid, contour lines, 200 km squares.
 
+- **Guided demo and tutorial** ("Demo" and "Tutorial" on the title page, "Demo" in the header): the demo tells
+  in 24 steps why a landing site near the lunar south pole depends on the date. A lander is to touch down on a
+  plain 32 km from the pole on 7 Nov 2027; the launch slips by 90 days; on 5 Feb 2028 the same spot lies in the
+  shadow of the heights around it and stays dark for 4273 hours. The demo uses the page's own scene, clock and
+  calculation (no stand-in pictures) and reads its numbers from them while it runs; arrow keys step, Escape ends.
+  `?demo=auto` in the address starts it by itself and steps on after a reading time (for recording).
+  The tutorial (`landing-tour.js`; also "Tutorial" in the header) has twelve stops in three chapters at the page's own
+  controls: time span, marking a point, the info card, the two limits and their area, the delay row, Solar
+  Elevation and Sky view, the comparison table, the terrain view and its maps. Each stop gives a question, a short
+  answer, one action to try (ticked off when the page shows it was done; "Show me" carries it out) and what the
+  page then says, read from the page itself. The page stays in the user's hands. A "Reference" sheet lists the
+  controls without a stop, the definitions behind the numbers and the sources.
+
 Every number names what it rests on: the sky source and the ground (5 m site profile, LDEM64 block, global
 grid or smooth sphere).
 
@@ -64,7 +77,9 @@ depends on the heights only and no number of the page uses it.
 | `ui/site-data.js` | Which ground is known for each marked point |
 | `lunar-sky.js` | Analytic sky model: fallback outside 2027-2066, and the Moon's orientation among the stars |
 | `data/globe/` | Global height grid, 0.25 deg cells, MOON_ME (2 MB) |
-| `data/terrain/` | Terrain blocks for the nine listed sites (1.5 MB each) and `index.json` |
+| `landing-demo.js`, `landing-demo.css` | The guided demo: a director that sets clock, camera, surfaces and limits of the page shot by shot |
+| `landing-tour.js`, `landing-tour.css` | The tutorial: stops at the page's controls, each with an action that is checked against the page, and the reference sheet |
+| `data/terrain/` | Terrain blocks for the nine listed sites and for the landing spot of the guided demo, a free point (1.5 MB each), and `index.json` |
 | `data/exposure/` | Mean sunlight and Earth visibility 2027, 0.5 deg cells |
 | `expiry-date/` | The Expiry Date comparison tool; its `data/` holds the Horizons table, the site list and the two 5 m site profiles that this page uses too |
 | `tools/` | Python: `serve.py` local server, `build_globe.py`, `build_terrain.py`, `build_exposure.py` data files, `check_frames.py` frame check, `lunar.py` shared geometry and the terrain block format |

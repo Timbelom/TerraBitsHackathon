@@ -147,7 +147,13 @@ export function createTerrainView({ renderer, input }) {
   const ray = color => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
     const l = new THREE.Line(g, new THREE.LineDashedMaterial({ color, dashSize: 3, gapSize: 3, transparent: true, opacity: .5 })); l.frustumCulled = false; group.add(l); return l; };
   const sunRay = ray(0xfff0c8), earthRay = ray(0x9cc4ee);
-  let sunObj = null, earthObj = null, sunScale = 1, earthScale = 1;
+  let sunObj = null, earthObj = null, sunScale = 1, earthScale = 1, skyFit = false, lastSky = null;
+  // For the guided demo: what keeps the Sun from the site. The highest ground between the site and the Sun (the
+  // skyline in the Sun's direction) carries a red dot, the mast and the ray to the Sun turn red. The dot is drawn
+  // over the ground, so it is never hidden.
+  const BAD = 0xff8a7f;
+  const blockDot = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 14), new THREE.MeshBasicMaterial({ color: BAD, depthTest: false, transparent: true }));
+  blockDot.renderOrder = 7; blockDot.visible = false; group.add(blockDot);
 
   // ---- geometry of a block -----------------------------------------------------------------
   function worldOf(xKm, yKm, zM, out, o) {            // map coordinates + height -> world position
@@ -194,7 +200,7 @@ export function createTerrainView({ renderer, input }) {
 
   /** Builds the scene for a block. onProgress(fraction, text). The camera is set to its opening place. */
   async function load(b, onProgress = () => {}) {
-    onProgress(0, 'Building the ground');
+    onProgress(0, 'Building terrain mesh');
     await pause();
     block = b; half = b.halfKm; visHalf = b.visibleKm / 2; layers.clear(); if (mode !== 'relief' && mode !== 'elevation') mode = 'relief';
     clip.forEach(p => { p.constant = visHalf; });
@@ -212,7 +218,7 @@ export function createTerrainView({ renderer, input }) {
         }
       }
     }
-    onProgress(.35, 'Surroundings to ' + Math.round(b.farHalfKm) + ' km'); await pause();
+    onProgress(.35, 'Far-field terrain to ' + Math.round(b.farHalfKm) + ' km'); await pause();
     farMinY = Infinity; farMaxY = -Infinity;
     for (let r = 0, i = 0; r < FAR; r++) {
       const y = b.farHalfKm - r * b.farStepKm;
@@ -329,11 +335,15 @@ export function createTerrainView({ renderer, input }) {
    * Light and shadows follow the Sun; they are redone when it has moved by more than 0.05 deg.
    */
   function setSky(sunENU, earthENU) {
+    lastSky = [sunENU, earthENU];
     sunDir.set(sunENU[0], sunENU[2], -sunENU[1]);
     const top = pin.position.y + RECEIVER_HEIGHT_M / 1000;
-    if (sunObj) { sunObj.position.copy(sunDir).multiplyScalar(SUN_KM); sunObj.position.y += top; }
+    let sunR = domeAt(sunDir, SUN_KM, 14); const earthR = domeAt(earthDir, SKY_KM, 20);
+    if (skyFit && sunDir.angleTo(earthDir) < .45) sunR = Math.max(sunR, earthR * 1.4);       // where their directions meet the Sun stands further out, as on the full dome
+    if (sunObj) { sunObj.position.copy(sunDir).multiplyScalar(sunR); sunObj.position.y += top; }
     earthDir.set(earthENU[0], earthENU[2], -earthENU[1]);
-    if (earthObj) { earthObj.position.copy(earthDir).multiplyScalar(SKY_KM); earthObj.position.y += top; }
+    if (earthObj) { earthObj.position.copy(earthDir).multiplyScalar(earthR); earthObj.position.y += top;
+    sunPath.scale.setScalar(sunR / SUN_KM); earthPath.scale.setScalar(earthR / SKY_KM); }
     sunPath.position.y = earthPath.position.y = top;
     skySun.position.copy(sunDir).multiplyScalar(1000);
     // earthshine: Earth above the horizontal, times the lit share of its disc (1 = full Earth, Sun opposite)
@@ -358,6 +368,46 @@ export function createTerrainView({ renderer, input }) {
     }
   }
   /** The page's Sun and Earth objects come over for as long as the view is open; scale: world size factor for each. */
+  /**
+   * The ground that stands highest between the site and the Sun, seen from the top of the mast: { point (world),
+   * distKm, overDeg (how far it stands above the Sun's centre) }, or null when the Sun clears all ground on its way.
+   */
+  function sunBlock() {
+    if (!block) return null;
+    const top = pin.position.y + RECEIVER_HEIGHT_M / 1000, h = Math.hypot(sunDir.x, sunDir.z); if (h < 1e-6) return null;
+    const sunTan = sunDir.y / h; let best = null, bestTan = sunTan;
+    for (let d = 1; d < block.farHalfKm; d += d < half ? block.stepKm * .5 : block.farStepKm * .5) {
+      const x = sunDir.x / h * d, z = sunDir.z / h * d, y = heightAt(x, z); if (Number.isNaN(y)) break;
+      const t = (y - top) / d; if (t > bestTan) { bestTan = t; best = { point: new THREE.Vector3(x, y, z), distKm: d }; }
+    }
+    if (best) best.overDeg = (Math.atan(bestTan) - Math.atan(sunTan)) / RAD;
+    return best;
+  }
+  /**
+   * Sun and Earth as close to the site as they can stand without touching the drawn ground: just outside the edge
+   * of the square in their direction (margin: their drawn radius and a gap), instead of on the full dome. The guided
+   * demo uses it so that both fit into one picture with the ground still large; their directions stay true, and
+   * each path is drawn through its body.
+   */
+  const domeAt = (dir, full, margin) => {
+    if (!skyFit) return full;
+    const h = Math.hypot(dir.x, dir.z) || 1, toEdge = visHalf * h / Math.max(Math.abs(dir.x), Math.abs(dir.z), 1e-6);
+    return Math.min(full, (toEdge + margin) / h);
+  };
+  function setSkyFit(on) {
+    if (on === skyFit) return;
+    skyFit = on;
+    if (lastSky) setSky(...lastSky);
+  }
+  /** Mark (or stop marking) what keeps the Sun from the site. Returns what sunBlock gives, or null. */
+  function setAlarm(on) {
+    const hit = on ? sunBlock() : null, c = hit ? BAD : 0xeceef1;
+    mast.material.color.set(c); foot.material.color.set(c);
+    sunRay.material.color.set(hit ? BAD : 0xfff0c8); sunRay.material.opacity = hit ? .9 : .5;
+    blockDot.visible = !!hit;
+    if (hit) blockDot.position.copy(hit.point);
+    return hit;
+  }
   function adopt(sun, earth, sunK, earthK) {
     sunObj = sun; earthObj = earth; sunScale = sun.scale.x; earthScale = earth.scale.x;
     sky.add(sun, earth); sun.scale.setScalar(sunK * BODY_EXAG * SUN_KM / SKY_KM); earth.scale.setScalar(earthK * BODY_EXAG);
@@ -488,15 +538,16 @@ export function createTerrainView({ renderer, input }) {
   }
   const Z = new THREE.Vector3(0, 0, 1);
 
-  /** w, h: size of the drawing area in px; left: width taken by the sidebar (the scene is drawn beside it). */
-  function resize(w, h, left) {
-    const vw = Math.max(w - left, 1); viewW = w; viewH = h;
-    camera.aspect = vw / h;
-    if (left > 0) camera.setViewOffset(vw, h, -left, 0, w, h); else camera.clearViewOffset();
+  /** w, h: size of the drawing area in px; left, right, bottom: room kept free at the sides and below (sidebar, text of the demo); the scene is centred in the rest. */
+  function resize(w, h, left, right = 0, bottom = 0) {
+    const vw = Math.max(w - left - right, 1), vh = Math.max(h - bottom, 1); viewW = w; viewH = h;
+    camera.aspect = vw / vh;
+    if (left + right + bottom > 0) camera.setViewOffset(vw, vh, -left, 0, w, h); else camera.clearViewOffset();
     camera.updateProjectionMatrix();
   }
   function render() {
     controls.update(); placeScale();
+    if (blockDot.visible) blockDot.scale.setScalar(camera.position.distanceTo(blockDot.position) * .011);   // the dot keeps its size in the picture, however far the camera stands
     farGroup.visible = renderer.shadowMap.needsUpdate && mode === 'relief';   // the far grid only casts shadows: in the frame only when they are redone
     renderer.render(scene, camera);
     farGroup.visible = false;
@@ -515,5 +566,8 @@ export function createTerrainView({ renderer, input }) {
     get block() { return block; },
     get range() { return { minM, maxM }; },
     skyDistance: SKY_KM,
+    setAlarm, setSkyFit,
+    /** World positions of the Sun and the Earth on the sky dome (null before adopt). */
+    get bodies() { return { sun: sunObj?.position ?? null, earth: earthObj?.position ?? null }; },
   };
 }

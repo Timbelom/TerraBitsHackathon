@@ -13,13 +13,14 @@ import { createSeries, windowFor } from './landing-series.js';
 import { createSky } from './landing-sky.js';
 import { createArea, LIMIT_MAX_H } from './landing-area.js';
 import { createExposure } from './landing-exposure.js';
+import { createDemo } from './landing-demo.js';
 import { inertialSky, loadHorizons, onSkyChange, skySource, SOURCE_LABEL, SIDEREAL_DAYS, DAY_MS, MOON_RADIUS_KM, EARTH_RADIUS_KM, SUN_RADIUS_KM, AU_KM } from './core/sky.js';
 import { TerrainSource, GlobeGrid } from './core/terrain.js';
 import { createSiteData } from './ui/site-data.js';
 import { createMoonGlobe } from './view/moon-globe.js';
 import { createTerrainView } from './view/terrain-view.js?v=4';
 import { VIRIDIS, SUNLIGHT, EARTHVIEW, cssGradient } from './view/colors.js';
-import { siteState, makeSite, skylineFromGlobe, discFraction, SUN_RADIUS_DEG, basisLabel } from './core/visibility.js';
+import { siteState, makeSite, skylineFromGlobe, discFraction, nextChange, SUN_RADIUS_DEG, basisLabel } from './core/visibility.js';
 import { RAD, basisAt, bodyToThree, coordLabel } from './core/frames.js';
 
 const world = document.getElementById('world');
@@ -32,6 +33,7 @@ let busy = false;
 let scope = 'system';                          // 'system': Moon, Earth, Sun | 'terrain': the ground around one point
 let globe = null;                              // the lunar relief mesh (view/moon-globe.js), once the global grid has loaded
 let terrain = null;                            // the terrain view (view/terrain-view.js)
+let demo = null;                               // the guided demo (landing-demo.js); while it holds the camera (demo.rig) the layout leaves the camera alone
 
 let renderer;
 try {
@@ -380,12 +382,32 @@ function placeBodies() {
   orient(earthBall, d.earthToScene); earthBall.quaternion.premultiply(held);  // true axis, one turn per day
   earthDistKm = d.earthDistKm;
   if (scope === 'terrain') { earthBall.quaternion.premultiply(earthTurn); return; }   // Sun and Earth are with the terrain view, which places them
-  sun.position.copy(turned(d.sun)).multiplyScalar(SUN_DIST);
-  earth.position.copy(turned(d.earth)).multiplyScalar(d.earthDistKm * KM);
+  sunAt.copy(turned(d.sun)).multiplyScalar(SUN_DIST);
+  earthAt.copy(turned(d.earth)).multiplyScalar(d.earthDistKm * KM);
+  liftBodies();
   orbits.quaternion.copy(held);
   sky.quaternion.copy(held).multiply(skyBase);
 }
 let earthDistKm = 384400;
+// Title page only: Sun and Earth are drawn on one line TITLE_LIFT of the half window height above the centre, so
+// they pass above the Moon and the space left and right of it stays free for the text. The amount is set per
+// body from its depth, so both run along the same screen line wherever they are on their way round. It goes
+// to zero with the opening move (applyMix); in the system view the bodies stand where they are. Light and
+// shadows always use the true direction.
+const TITLE_LIFT = .6, sunAt = new THREE.Vector3(), earthAt = new THREE.Vector3(), liftVec = new THREE.Vector3(), liftTurn = new THREE.Quaternion();
+let titleLift = 0;
+function liftBodies() {
+  sun.position.copy(sunAt); earth.position.copy(earthAt);
+  if (titleLift <= 0) return;
+  liftTurn.copy(pivot.quaternion).invert();
+  const half = Math.tan(THREE.MathUtils.degToRad(FOV / 2));
+  for (const [body, at] of [[sun, sunAt], [earth, earthAt]]) {
+    const depth = camera.position.z - liftVec.copy(at).applyQuaternion(pivot.quaternion).z;
+    if (depth <= 0) continue;                                                // behind the camera, not drawn
+    const f = Math.sqrt(titleLift / TITLE_LIFT);                             // 1 on the title page: exactly on the line
+    body.position.add(liftVec.set(0, titleLift * depth * half - f * liftVec.y, 0).applyQuaternion(liftTurn));
+  }
+}
 placeBodies();
 
 // --- Stars: real sky, Moon-fixed frame -------------------------------------------
@@ -443,26 +465,27 @@ function animateZoom(to, ms = 1400) {
 // the remaining width through a view offset, so the drawing buffer is never resized during the slide
 // (resizing clears it and made the view go black for a moment).
 const sideEl = document.getElementById('params');
-let sideNow = 0, bufW = 0, bufH = 0;
+let sideNow = 0, bufW = 0, bufH = 0, insetL = 0, insetR = 0, insetB = 0;   // insets: room the guided demo keeps free for its text, left, right and below the scene
 const moonDisc = { x: 0, y: 0, r: 0 };            // the Moon on screen, px relative to the hero (for the info cards)
 function layout() {
   const w = world.clientWidth, h = world.clientHeight;
   if (w !== bufW || h !== bufH) { renderer.setSize(w, h, false); bufW = w; bufH = h; }
-  const vw = Math.max(w - sideNow, 1);          // width left for the scene
-  camera.aspect = vw / h;
-  if (sideNow > 0) camera.setViewOffset(vw, h, -sideNow, 0, w, h); else camera.clearViewOffset();
+  const vw = Math.max(w - sideNow - insetL - insetR, 1);          // width left for the scene
+  const vh = Math.max(h - insetB, 1);                              // height left for the scene
+  camera.aspect = vw / vh;
+  if (sideNow + insetL + insetR + insetB > 0) camera.setViewOffset(vw, vh, -(sideNow + insetL), 0, w, h); else camera.clearViewOffset();
   const k = 2 * Math.tan(THREE.MathUtils.degToRad(FOV / 2));
   // After the click: stay close, Moon diameter 46 % of the height (at most 66 % of the width).
   systemDistance = Math.max(2 * R / (.46 * k), 2 * R / (.66 * k * camera.aspect));
   // Start view: Moon diameter 56 % of the height, but never more than 78 % of the width.
   closeDistance = Math.max(2 * R / (.56 * k), 2 * R / (.78 * k * camera.aspect));
   restDistance = distanceFor(mix);
-  if (!busy) camera.position.set(0, 0, restDistance);
+  if (!busy && !demo?.rig) camera.position.set(0, 0, restDistance);
   camera.updateProjectionMatrix();
-  terrain?.resize(w, h, sideNow);
-  const d = 2 * R / (k * restDistance) * h;   // projected diameter in px, for the keyboard target
-  moonDisc.x = vw / 2; moonDisc.y = h / 2; moonDisc.r = d / 2;
-  Object.assign(target.style, { left: (vw - d) / 2 + 'px', top: (h - d) / 2 + 'px', width: d + 'px', height: d + 'px' });
+  terrain?.resize(w, h, sideNow + insetL, insetR, insetB);
+  const d = 2 * R / (k * restDistance) * vh;   // projected diameter in px, for the keyboard target
+  moonDisc.x = insetL + vw / 2; moonDisc.y = vh / 2; moonDisc.r = d / 2;
+  Object.assign(target.style, { left: insetL + (vw - d) / 2 + 'px', top: (vh - d) / 2 + 'px', width: d + 'px', height: d + 'px' });
 }
 addEventListener('resize', layout);
 layout();
@@ -492,8 +515,9 @@ function moonPoint(e) {
   return [lat, ((lon % 360) + 360) % 360];
 }
 let dropPin = null;                                  // set by the sidebar block below: (lat, lon) => marker + Coordinates field
+let setSpan = null;                                  // set by the sidebar block below: (startMs, stopMs) => time span, null clears it
 let drag = null, vy = 0, vx = 0, hoverEvent = null;
-const OVERLAYS = 'a, .params, .pin, .card, .series, .tbar, .timebar, .legend, .offscreen';
+const OVERLAYS = 'a, .params, .pin, .card, .series, .compare, .tour-hint, .tour-ref, .tbar, .timebar, .legend, .offscreen';
 hero.addEventListener('pointerdown', e => {
   if (busy || scope !== 'system' || e.target.closest(OVERLAYS)) return;         // drag anywhere turns the space
   drag = { x: e.clientX, y: e.clientY, moved: 0 };
@@ -558,8 +582,9 @@ function expand() {
 function applyMix(m) {
   mix = m;
   restDistance = distanceFor(m);
-  camera.position.z = restDistance;
+  if (!demo?.rig) camera.position.z = restDistance;
   orbits.children.forEach(l => { l.material.opacity = l.userData.opacity * m; });
+  titleLift = TITLE_LIFT * (1 - m) * (1 - m);
   placeBodies();
 }
 applyMix(0); layout();
@@ -712,10 +737,11 @@ const skyView = createSky({ hero, marked: () => pins.marked(), picked: () => pin
 skyToggle.addEventListener('click', e => { e.preventDefault(); showSky(skyToggle.getAttribute('aria-pressed') !== 'true'); if (!expanded) expand(); });
 skyToggle.addEventListener('keydown', e => { if (e.key === ' ') { e.preventDefault(); skyToggle.click(); } });
 let landAt = ms => setTime(ms);                       // a square of a card's delay row; replaced by the time bar block below, which also moves a set span
-const cards = createCards({ hero, pins, now: () => simMs, disc: () => moonDisc, avoid: () => [series.rect(), skyView.rect(), compare.rect(), panelRect(timebarEl), panelRect(legendBox)],
+const cards = createCards({ hero, pins, now: () => simMs, disc: () => moonDisc, avoid: () => [series.rect(), skyView.rect(), compare.rect(), panelRect(timebarEl), panelRect(legendBox), panelRect(document.querySelector('.tour-hint'))],   // the last: the tutorial's hint
   ground: s => siteData.get(s, true), groundVersion: dataVersion, window: () => limitWindow, limits, onTerrain: s => openTerrain(s), setTime: ms => landAt(ms) });
 // Comparison (landing-compare.js): the open info cards as one table with a verdict, in place of the cards. Shown only through "Compare as table" in the header.
-const compare = createCompare({ hero, snapshot: () => cards.snapshot(), metrics: () => cards.metrics(), limits, onClose: () => showCompare(false) });
+const compare = createCompare({ hero, snapshot: () => cards.snapshot(), metrics: () => cards.metrics(), limits, onClose: () => showCompare(false),
+  disc: () => moonDisc, avoid: () => [panelRect(timebarEl), panelRect(legendBox), panelRect(document.querySelector('.tour-hint'))] });
 const compareToggle = document.getElementById('compare-toggle');
 // The panels never lie on top of each other: the table stands alone, in place of the cards (opening it closes the two plots and the other way round);
 // the two plots stand side by side (landing-sky.js).
@@ -730,9 +756,9 @@ let detailNote = '';                                  // says so when the lighte
 let surfaceMode = 'relief', globeGrid = null;
 const layerOn = { graticule: false, contours: true, squares: false };
 const SURFACES = {                                    // the colour-coded surfaces and what their legend says
-  elevation: { title: 'Elevation', unit: 'm above the 1737.4 km sphere', stops: VIRIDIS },
-  sunlight: { title: 'Mean sunlight', unit: '% of the Sun’s disc in view', stops: SUNLIGHT },
-  earth: { title: 'Earth in view', unit: '% of the Earth’s disc in view', stops: EARTHVIEW },
+  elevation: { title: 'Elevation', unit: 'm, relative to 1737.4 km sphere', stops: VIRIDIS },
+  sunlight: { title: 'Mean illumination', unit: '% of the Sun’s disk in view', stops: SUNLIGHT },
+  earth: { title: 'DTE availability', unit: '% of Earth’s disk in view', stops: EARTHVIEW },
 };
 const valueLayers = {};                               // name -> { values, width, height, note } of data/exposure/
 // Shadows on the Moon: the skyline map (tools/build_horizon.mjs). Until it has loaded, or without the file, the
@@ -787,16 +813,22 @@ function terrainExposure() {
     const t = exposure.progress().toFixed(2); if (t !== exposureNote) { exposureNote = t; applySurface(); }      // the line under "Surface" follows the calculation
   }
 }
-function applySurface() {
+// The title page shows the Moon as imagery; while the pointer is on the text right of it, as elevation. With
+// the opening move it changes to the surface that is chosen (relief at the start). Each change is a cross-fade.
+let titleHover = false, titleShown = null;
+const CARD_MOON_MIN = .75;
+const onTitle = () => scope === 'system' && !expanded;
+function applySurface(fadeMs = 0) {
   const inTerrain = scope === 'terrain';
-  const shown = globe ? globe.setMode(surfaceMode) : 'relief';
+  titleShown = onTitle();
+  const shown = !globe ? 'relief' : titleShown ? (globe.setMode(titleHover ? 'elevation' : 'imagery', fadeMs), surfaceMode) : globe.setMode(surfaceMode, fadeMs);
   if (globe) { globe.setGraticule(layerOn.graticule); globe.setSquares(layerOn.squares); globe.setContours(layerOn.contours); }
   const tShown = terrain.setMode(surfaceMode); terrain.setContours(layerOn.contours);
   renderer.shadowMap.needsUpdate = true;
   // In the terrain view the two mean surfaces are worked out for the ground that is open (terrainExposure below);
   // until they are there the ground shows relief and this line says how far the calculation is.
-  surfaceNote.textContent = inTerrain && isMean(surfaceMode) ? (tShown === surfaceMode ? '' : 'Calculating ' + SURFACES[surfaceMode].title.toLowerCase() + ' for this ground' + (exposure.progress() > 0 ? ', ' + Math.round(exposure.progress() * 100) + ' %' : '') + ' …')
-    : !globe && surfaceMode !== 'relief' ? 'Needs the global height grid, which has not loaded.'
+  surfaceNote.textContent = inTerrain && isMean(surfaceMode) ? (tShown === surfaceMode ? '' : 'Calculating ' + SURFACES[surfaceMode].title.replace(/^[A-Z](?=[a-z])/, c => c.toLowerCase()) + ' for this terrain' + (exposure.progress() > 0 ? ', ' + Math.round(exposure.progress() * 100) + ' %' : '') + ' …')
+    : !globe && surfaceMode !== 'relief' ? 'Requires the global elevation grid, which has not loaded.'
     : shown !== surfaceMode ? 'Not available: the data for this surface has not loaded.' : detailNote;
   updateLegend();
 }
@@ -816,14 +848,14 @@ function updateLegend() {
     ticks = [[0, thousands(minM)]];
     for (let v = Math.ceil(minM / step) * step; v <= maxM; v += step) { const f = (v - minM) / span; if (f > .2 && f < .8) ticks.push([f, thousands(v)]); }
     ticks.push([1, thousands(maxM)]);
-    const ground = inTerrain ? (terrain.block.coarse ? 'global grid, 7.6 km cells' : 'LOLA LDEM64') + ', the drawn square' : 'LOLA LDEM64, 7.6 km cells';
-    legendNote.textContent = ground + (layerOn.contours ? '; contour lines every ' + (inTerrain ? '250 m' : '1 km') : '') + '.';
+    const ground = inTerrain ? (terrain.block.coarse ? 'global grid, 7.6 km cells' : 'LOLA LDEM64') + ', displayed area' : 'LOLA global grid, 7.6 km cells';
+    legendNote.textContent = ground + (layerOn.contours ? '; contour interval ' + (inTerrain ? '250 m' : '1 km') : '') + '.';
   } else if (inTerrain) {
     // the scale runs between the lowest and the highest value on this ground, so differences inside the square show
     const { lo, hi } = terrain.valueRange(mode), g = exposureShown, digits = hi - lo < .1 ? 1 : 0, stamp = ms => new Date(ms).toISOString().slice(0, 10);
     ticks = [0, .25, .5, .75, 1].map(f => [f, ((lo + f * (hi - lo)) * 100).toFixed(digits)]);
     legendNote.textContent = 'Mean over ' + stamp(g.a) + ' to ' + stamp(g.b) + ' UTC' + (g.free ? ' (two lunar days)' : '')
-      + '. Each point against its own skyline, ' + (terrain.block.coarse ? 'global grid, 7.6 km cells' : 'LOLA LDEM64') + ', points 1.6 km apart.';
+      + '. Each point against its own terrain horizon, ' + (terrain.block.coarse ? 'global grid, 7.6 km cells' : 'LOLA LDEM64') + ', 1.6 km grid spacing.';
   } else {
     ticks = [0, .25, .5, .75, 1].map(f => [f, String(Math.round(f * 100))]);
     legendNote.textContent = valueLayers[mode]?.note || '';
@@ -834,7 +866,7 @@ function updateLegend() {
 
 // The Moon is always drawn with the full mesh and the 4096 shadow map. The lighter mesh exists only on request
 // (?detail=light in the address); the page never switches to it by itself.
-if (startLight) detailNote = 'Moon drawn with the lighter mesh (?detail=light in the address).';
+if (startLight) detailNote = 'Moon drawn with the reduced-detail mesh (?detail=light in the URL).';
 
 // --- Values under the pointer ------------------------------------------------------------
 const readoutEl = document.getElementById('readout');
@@ -862,12 +894,12 @@ function systemReadout(e) {
     if (mode === 'sunlight' || mode === 'earth') lines.push(SURFACES[mode].title + ' ' + (globe.valueAt(mode, lat, lon) * 100).toFixed(0) + ' %');
     else {
       const sun = siteState(simMs, makeSite(lat, lon, z), tState).sun, frac = discFraction(sun.el - skylineFromGlobe(globeGrid, lat, lon, sun.az), SUN_RADIUS_DEG);
-      lines.push('Sun ' + signed(sun.el) + ', ' + Math.round(frac * 100) + ' % of its disc in view');
+      lines.push('Solar elevation ' + signed(sun.el) + ', ' + Math.round(frac * 100) + ' % of its disk in view');
     }
     const lim = area.at(lat, lon);                      // the cell's numbers behind the marked area
-    if (lim) { const h = v => v === Infinity ? 'over ' + LIMIT_MAX_H + ' h' : v.toFixed(1) + ' h';
+    if (lim) { const h = v => v === Infinity ? '&gt; ' + LIMIT_MAX_H + ' h' : v.toFixed(1) + ' h';
       lines.push([lim.sun != null && 'Longest darkness ' + h(lim.sun), lim.earth != null && 'Longest DTE outage ' + h(lim.earth)].filter(Boolean).join(', ') + ' <span>(' + (lim.free ? 'next 24 h' : 'time span') + ', 0.5° cell)</span>'); }
-    if (layerOn.squares) { const i = globe.squareAt(lat, lon); globe.markSquare(i); lines.push(i >= 0 ? 'Square ' + globe.squares[i].label : 'In no square'); }
+    if (layerOn.squares) { const i = globe.squareAt(lat, lon); globe.markSquare(i); lines.push(i >= 0 ? 'Square ' + globe.squares[i].label : 'Outside the 200 km squares'); }
   }
   showReadout(e, lines);
 }
@@ -886,7 +918,7 @@ async function openTerrain(site) {
   if (opening || scope !== 'system') return;
   opening = true; hideReadout();
   const how = siteData.availability(site);
-  progress(.02, how === 'server' ? 'Cutting the ground out of LOLA LDEM64' : 'Loading terrain');
+  progress(.02, how === 'server' ? 'Extracting terrain from LOLA LDEM64' : 'Loading terrain');
   // the server gives no progress while it reads the raster: the bar creeps towards a third meanwhile
   const t0 = performance.now(); clearInterval(creep);
   creep = setInterval(() => progress(.02 + .3 * (1 - Math.exp(-(performance.now() - t0) / 2500))), 100);
@@ -894,7 +926,8 @@ async function openTerrain(site) {
   try {
     const block = await siteData.loadBlock(site, (stage, f) => { if (stage === 'download') { clearInterval(creep); progress(.34 + .16 * f, 'Receiving terrain'); } });
     clearInterval(creep);
-    await terrain.load(block, (f, text) => progress(.5 + .5 * f, text));
+    // the guided demo builds the ground of its next shot ahead of time (prepareTerrain below): then it is there already
+    if (!(demo?.active && terrain.block === block)) await terrain.load(block, (f, text) => progress(.5 + .5 * f, text));
     world.classList.add('veil'); await wait(reduce.matches ? 0 : 320);
     enterTerrain(site, block);
     world.classList.remove('veil');
@@ -936,9 +969,9 @@ function enterTerrain(site, block) {
   terrain.controls.enabled = true; tInput.hidden = false; tBar.hidden = false;
   tName.textContent = site.name;
   const g = siteData.get(site);
-  tMeta.textContent = block.visibleKm + ' \u00d7 ' + block.visibleKm + ' km around ' + coordLabel(site.lat, site.lon, 3) + ', true height scale. '
-    + (block.coarse ? 'Coarse ground from the global grid, 7.6 km cells' + (g.error ? ' (' + g.error + ')' : siteData.availability(site) ? '' : '; full resolution needs the local server, start.bat') + '.'
-      : 'Ground: ' + basisLabel('block', block.sourceCellM) + '.');
+  tMeta.textContent = block.visibleKm + ' \u00d7 ' + block.visibleKm + ' km around ' + coordLabel(site.lat, site.lon, 3) + ', no vertical exaggeration. '
+    + (block.coarse ? 'Coarse terrain from the global grid, 7.6 km cells' + (g.error ? ' (' + g.error + ')' : siteData.availability(site) ? '' : '; full resolution requires the local data server') + '.'
+      : 'Terrain data: ' + basisLabel('block', block.sourceCellM) + '.');
   if (!cards.has(site.id)) pins.onOpen?.(site);
   cards.dock(site.id, tBar.offsetTop + tBar.offsetHeight + 12);
   applySurface(); layout();
@@ -971,9 +1004,9 @@ tInput.addEventListener('pointermove', e => {
     if (!p) return hideReadout();
     showReadout(ev, ['<b>' + coordLabel(p.lat, p.lon) + '</b>',
       'Elevation ' + thousands(p.elevM) + ' m, slope ' + p.slopeDeg.toFixed(1) + '°',
-      'Sun ' + signed(p.sunElevDeg) + ', horizon below it ' + signed(p.horizonDeg) + ', ' + Math.round(p.discFrac * 100) + ' % of its disc in view',
+      'Solar elevation ' + signed(p.sunElevDeg) + ', terrain horizon ' + signed(p.horizonDeg) + ', ' + Math.round(p.discFrac * 100) + ' % of its disk in view',
       ...(isMean(terrain.mode) ? [SURFACES[terrain.mode].title + ' ' + (terrain.valueAt(terrain.mode, p.xKm, p.yKm) * 100).toFixed(1) + ' % <span>(mean over the time span)</span>'] : []),
-      'On this slope ' + Math.round(p.fluxWm2) + ' W/m² <span>(incidence ' + p.incidenceDeg.toFixed(0) + '°, 1361 W/m² at 1 au)</span>']);
+      'Irradiance on slope ' + Math.round(p.fluxWm2) + ' W/m² <span>(incidence angle ' + p.incidenceDeg.toFixed(0) + '°, 1361 W/m² at 1 au)</span>']);
   });
   tHover = e;
 });
@@ -995,6 +1028,7 @@ function frame(now) {
     pivot.rotation.y += vy; pivot.rotation.x = THREE.MathUtils.clamp(pivot.rotation.x + vx, -TILT, TILT);
     vy *= .94; vx *= .94;
   }
+  if (titleLift > 0) liftBodies();                        // the lift follows the turned space
   if (playing && !zoom?.to && !scrubbing) {
     simMs += dt * 1000 * TIME_SCALE * speed;              // the one clock for every motion
     if (simMs >= stopMs) setTime(loopMs); else { placeBodies(); onClock?.(); }
@@ -1015,6 +1049,9 @@ function frame(now) {
     zoomK = a.from + (a.to - a.from) * e; if (p === 1) zoomAnim = null;
     layout();
   }
+  demo?.frame(now);                                       // the guided demo moves clock, space and camera before anything reads them
+  if (titleShown !== onTitle()) applySurface(reduce.matches ? 0 : 1600);   // leaving the title page (or coming back to it)
+  globe?.tick(real * 1000);
   const spanA = spanWindow.a, spanB = spanWindow.b;
   updateWindow();
   if (spanWindow.a !== spanA || spanWindow.b !== spanB) onClock?.();     // the ends of the time slider follow a span set while the clock stands
@@ -1023,11 +1060,12 @@ function frame(now) {
   pointToBodies();
   cards.update();
   // Info cards and zoom: a card more than before and they no longer stand free of each other -> zoom out as far as
-  // needed (never in). While the Moon changes size on screen the cards that were not moved by hand follow it.
+  // needed (never in), but the Moon keeps at least CARD_MOON_MIN of its size in the system view; cards that still
+  // find no free place then overlap. While the Moon changes size on screen the cards that were not moved by hand follow it.
   if (scope === 'system' && expanded && !zoom) {
     const n = cards.count();
     if (n <= cardCount) cardCount = n;
-    else if (!zoomAnim) { cardCount = n; const r = cards.fit(discRadius(systemDistance * FAR_FACTOR)); if (r) animateZoom(Math.min(zoomK, zoomForRadius(r)), 900); }
+    else if (!zoomAnim) { cardCount = n; const r = cards.fit(discRadius(systemDistance) * CARD_MOON_MIN); if (r) animateZoom(Math.min(zoomK, zoomForRadius(r)), 900); }
     if (Math.abs(moonDisc.r - cardDiscR) > .5) { cardDiscR = moonDisc.r; cards.relayout(); }
   }
   series.update();
@@ -1116,7 +1154,7 @@ requestAnimationFrame(frame);
     const t = new Date(simMs).toISOString().slice(0, 16).replace('T', ' ');   // UTC, as the heading of the block says
     if (t !== shown) { shown = t; clocks.forEach(c => { c.textContent = t; }); }
     const src = skySource(simMs);                             // where Sun and Earth come from at this moment
-    if (src !== shownSource) { shownSource = src; sourceEl.textContent = 'Sun and Earth: ' + SOURCE_LABEL[src] + (src === 'analytic' ? ' (Horizons covers 2027 to 2066)' : ''); }
+    if (src !== shownSource) { shownSource = src; sourceEl.textContent = 'Sun and Earth: ' + SOURCE_LABEL[src] + (src === 'analytic' ? ' (JPL Horizons table covers 2027–2066)' : ''); }
     plays.forEach(play => { if ((play.getAttribute('aria-pressed') === 'true') !== playing) { play.setAttribute('aria-pressed', playing); play.setAttribute('aria-label', playing ? 'Pause' : 'Play'); } });
     showScrub();
   };
@@ -1158,6 +1196,10 @@ requestAnimationFrame(frame);
     };
     put(ms, 'p-from', 'p-from-time'); put(ms + len, 'p-to', 'p-to-time'); readSpan(true);
   };
+  setSpan = (a, b) => {                                   // from code (the guided demo): fills the fields, null clears the span
+    const put = (d, t, ms) => { const iso = ms == null ? '' : new Date(ms).toISOString(); document.getElementById(d).value = iso.slice(0, 10); document.getElementById(t).value = iso.slice(11, 16); };
+    put('p-from', 'p-from-time', a); put('p-to', 'p-to-time', b); readSpan(false);
+  };
   document.getElementById('p-clear').addEventListener('click', () => {
     ['p-from', 'p-from-time', 'p-to', 'p-to-time'].forEach(id => { document.getElementById(id).value = ''; });
     readSpan(false);
@@ -1187,3 +1229,57 @@ requestAnimationFrame(frame);
     const show = () => { const off = +r.value > LIMIT_MAX_H; o.textContent = off ? 'Off' : r.value + ' h'; r.setAttribute('aria-valuetext', off ? 'Off, no limit' : r.value + ' hours'); r.style.setProperty('--p', (r.value - r.min) / (r.max - r.min) * 100 + '%'); }; r.addEventListener('input', show); show(); });
   addEventListener('keydown', e => { if (e.key !== 'Escape') return; if (box.classList.contains('open')) tab.click(); else if (scope === 'terrain') closeTerrain(); });
 }
+
+// --- Guided demo (landing-demo.js) ----------------------------------------------------------
+// The demo is a director: it sets the clock, turns the space, moves the camera and switches the layers the page
+// already has. Everything it needs is handed over here; it changes nothing by itself while it is not running.
+{ // The text right of the Moon on the title page: pointer on it = the elevation model, click = into the system view
+  const hover = on => { if (titleHover === on) return; titleHover = on; if (onTitle()) applySurface(reduce.matches ? 0 : 450); };
+  hero.addEventListener('pointerover', e => { if (e.target.closest?.('.demo-intro')) hover(true); });
+  hero.addEventListener('pointerout', e => { if (e.target.closest?.('.demo-intro') && !e.relatedTarget?.closest?.('.demo-intro')) hover(false); });
+  hero.addEventListener('focusin', e => { if (e.target.closest?.('.demo-intro')) hover(true); });
+  hero.addEventListener('focusout', e => { if (e.target.closest?.('.demo-intro')) hover(false); });
+  hero.addEventListener('click', e => { if (e.target.closest?.('.demo-intro')) { hover(false); expand(); } });
+  hero.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.closest?.('.demo-intro')) { e.preventDefault(); hover(false); expand(); } });
+}
+demo = createDemo({
+  THREE, hero, camera, pivot, moon, earth, sun, R, reduce, EARTH_R, SUN_DIST,
+  now: () => simMs, setTime, playing: () => playing, setPlaying,
+  /** The clock during a time-lapse: bodies and read-outs follow, the paths are not redrawn (setTime does that at the end). */
+  scrubTime(ms) { simMs = ms; placeBodies(); onClock?.(); },
+  azimuths,
+  expanded: () => expanded,
+  /** From the title into the system view without the opening time-lapse: the camera only moves back. */
+  enter() {
+    if (expanded) return;
+    expanded = true; document.body.classList.add('expanded'); vx = vy = 0;
+    if (reduce.matches) { applyMix(1); layout(); updateLegend(); return; }
+    zoom = { t0: performance.now(), ms: 1200, y0: pivot.rotation.y, dy: 0, from: simMs, to: null };
+  },
+  opening: () => !!zoom,
+  /** The zoom at which the Moon is as large as on the title page. */
+  closeZoom: () => Math.log(closeDistance / systemDistance) / Math.log(NEAR_DISTANCE / systemDistance),
+  /** The page's own opening move once more (as after the first click on the title): from the title's distance out to the system view. */
+  reopen() { if (zoom) return; expanded = false; zoomK = 0; zoomAnim = null; applyMix(0); layout(); expand(); },
+  zoom: () => zoomK, setZoom, halt() { vx = vy = 0; zoomAnim = null; },
+  restDistance: () => restDistance,
+  /** The Moon on screen: centre and radius in px of the hero. */
+  moonDisc: () => moonDisc,
+  /** Room kept free of the scene at the left, right and bottom of the hero, px: the picture is centred in what is left (the demo's text stands there). */
+  setInset(l, r, b = 0) { if (l === insetL && r === insetR && b === insetB) return; insetL = l; insetR = r; insetB = b; layout(); },
+  /** The camera back on its axis, looking at the Moon (after the demo held it). */
+  releaseCamera() { camera.up.set(0, 1, 0); camera.position.set(0, 0, restDistance); camera.rotation.set(0, 0, 0); layout(); },
+  scope: () => scope, openTerrain, closeTerrain, terrain, terrainOpening: () => opening,
+  pins, cards, showSeries, setSpan,
+  span: () => stopMs < Infinity ? [loopMs, stopMs] : null,
+  /** Sun and Earth at a listed site now, on the best ground the page has for it; basis says which ground that is. */
+  siteNow(s, ms = simMs) { const g = siteData.get(s); return { ...siteState(ms, g.site, { sun: {}, earth: {} }), basis: g.basis }; },
+  /** The terrain block of a point (as the cards and the terrain view load it), so its numbers rest on that ground. */
+  loadGround: s => siteData.loadBlock(s),
+  /** Ahead of a shot: load a point's block and build its ground while the system view is still shown, so that opening it does not wait. */
+  async prepareTerrain(s) { const b = await siteData.loadBlock(s); if (scope === 'system' && !opening && terrain.block !== b) await terrain.load(b); },
+  /** Ahead of a shot, in the terrain view: work out mean sunlight and Earth contact of the open ground for the time span. True once they are there. */
+  warmExposure: () => scope === 'terrain' && !!terrain.block && !!exposure.update(terrain.block),
+  /** UTC ms at which a body next passes 50 % of its disc at a site, or null. */
+  nextChange(s, body, ms, endMs) { return nextChange(ms, siteData.get(s).site, body, endMs); },
+});
