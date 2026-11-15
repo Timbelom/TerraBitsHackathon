@@ -1,3 +1,4 @@
+import { dp, onScale } from './ui/scale.js';
 // Tutorial of the landing page: twelve stops at the page's own controls, in three chapters.
 // "Tutorial" on the title page, "Tutorial" in the header and "Start the tutorial" at the end of the guided demo
 // start it (landing-demo.js runs the page's opening move first). The demo tells why a landing site depends on the
@@ -30,8 +31,10 @@ const HOUR = 3600000, DAY = 24 * HOUR;
 const OFF = 97;                                                   // right end of the limit sliders: no limit
 const EXAMPLE = 'cr', SECOND = 'sh';                              // Connecting ridge and Shackleton rim: the two listed sites with 5 m ground
 const CHAPTERS = ['Basics', 'Mission limits', 'The analysis'];
-const EDGE = 16, TOP = 93;                                        // px; TOP clears the header (as the cards do; the same value stands in landing-tour.css)
-const CHECK_MS = 150, MIN_ROOM = 560;                             // px: with less height than this above the time bar the hint is not cut short there; it then lies over the bar's end
+let EDGE, TOP, MIN_ROOM;   // design px times dp(), see ui/scale.js
+onScale(k => { EDGE = 16 * k; TOP = 93 * k; MIN_ROOM = 560 * k; });
+//                                        // px; TOP clears the header (as the cards do; the same value stands in landing-tour.css)
+const CHECK_MS = 150;                             // px: with less height than this above the time bar the hint is not cut short there; it then lies over the bar's end
 const stamp = ms => new Date(ms).toISOString().slice(0, 16).replace('T', ' ');
 const days = ms => { const d = ms / DAY; return d < 2 ? Math.round(ms / HOUR) + ' h' : (Math.abs(d - Math.round(d)) < .02 ? Math.round(d) : d.toFixed(1)) + ' d'; };
 // the line under the two limit sliders (landing-area.js), e.g. "31.2 % of the Moon stays within both limits from … to … UTC. Marked on the Moon; …"

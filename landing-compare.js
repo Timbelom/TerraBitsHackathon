@@ -1,3 +1,4 @@
+import { dp, onScale } from './ui/scale.js';
 // The info cards as a table ("Compare as table" in the header).
 // The table stands in for the cards: while it is shown the cards and their lines leave the screen (cards.table()), and it
 // shows exactly what they show, one column per open card, one row per value, in the order and with the colours of the
@@ -10,9 +11,12 @@
 // It is as large as its columns and rows need, within the room of the scene, and opens beside the Moon where it covers
 // least (home()); it can be dragged (or moved with the arrow keys) and then stays where it was put.
 
-const EDGE = 16, TOP = 93, LEFT = 72, GAP = 24, REFRESH_MS = 200;      // px: gap to the hero's edge, clear of the header and of the Parameters tab
+const REFRESH_MS = 200;
+let EDGE, TOP, LEFT, GAP;   // design px times dp(), see ui/scale.js
+onScale(k => { EDGE = 16 * k; TOP = 93 * k; LEFT = 72 * k; GAP = 24 * k; });
+//      // px: gap to the hero's edge, clear of the header and of the Parameters tab
 // The header is 85 px high, 119 px in windows from 1280 px (landing-search.css): cards and table start below whichever it is.
-const headTop = () => Math.max(TOP, (document.querySelector('.site-header')?.offsetHeight ?? 0) + 8);
+const headTop = () => Math.max(TOP, (document.querySelector('.site-header')?.offsetHeight ?? 0) + EDGE / 2);
 const CLOSE_SVG = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8"/></svg>';
 const share = v => (v.share * 100).toFixed(1) + ' %';
 const list = names => names.length < 2 ? names.join('') : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
@@ -132,11 +136,11 @@ export function createCompare({ hero, snapshot, metrics, limits, onClose, disc, 
   const leftEdge = () => { const tab = document.getElementById('params-tab'); return tab ? Math.max(LEFT, tab.getBoundingClientRect().right - hero.getBoundingClientRect().left + EDGE) : LEFT; };
   const over = (a, b) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
   function fit() {
-    el.style.maxWidth = Math.max(280, hero.clientWidth - EDGE - leftEdge()) + 'px';
+    el.style.maxWidth = Math.max(280 * dp(), hero.clientWidth - EDGE - leftEdge()) + 'px';
     // what lies below the table in its own columns (the time bar, the legend) ends it; the rows scroll if they do not fit
     let floor = hero.clientHeight - EDGE;
-    for (const r of (avoid?.() ?? [])) if (r && r.y > at.y + 120 && r.x < at.x + el.offsetWidth && r.x + r.w > at.x) floor = Math.min(floor, r.y - EDGE);
-    scroll.style.maxHeight = Math.max(160, floor - at.y - (el.offsetHeight - scroll.offsetHeight)) + 'px';
+    for (const r of (avoid?.() ?? [])) if (r && r.y > at.y + 120 * dp() && r.x < at.x + el.offsetWidth && r.x + r.w > at.x) floor = Math.min(floor, r.y - EDGE);
+    scroll.style.maxHeight = Math.max(160 * dp(), floor - at.y - (el.offsetHeight - scroll.offsetHeight)) + 'px';
   }
   /**
    * Where the table stands by itself: at the top, on the side of the Moon where it covers least of the Moon and of

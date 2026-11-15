@@ -3,6 +3,7 @@
 // The Moon is a mesh over the global LOLA grid (view/moon-globe.js). Albedo for the "Imagery" surface:
 // NASA SVS CGI Moon Kit (LROC WAC). Until the grid has loaded, or if it cannot be loaded, a smooth sphere
 // with that albedo stands in.
+import { dp } from './ui/scale.js';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createPins } from './landing-pins.js';
@@ -710,7 +711,7 @@ function pointToBodies() {
     if (!off) continue;
     const n = Math.hypot(dx, dy) || 1; dx /= n; dy /= n;
     // the label's centre stays inside this box: clear of the sidebar and its tab, the header and the time bar
-    const x0 = L + 80 + p.w / 2, x1 = Rt - 16 - p.w / 2, y0 = 93 + p.h / 2, y1 = bufH - 200 - p.h / 2;
+    const k = dp(), x0 = L + 80 * k + p.w / 2, x1 = Rt - 16 * k - p.w / 2, y0 = (document.querySelector('.site-header')?.offsetHeight ?? 85 * k) + 8 * k + p.h / 2, y1 = bufH - 200 * k - p.h / 2;
     const my = (y0 + y1) / 2;
     const t = Math.min(dx > 0 ? (x1 - cx) / dx : dx < 0 ? (x0 - cx) / dx : Infinity, dy > 0 ? (y1 - my) / dy : dy < 0 ? (y0 - my) / dy : Infinity);
     p.el.style.transform = 'translate(' + Math.round(cx + dx * t - p.w / 2) + 'px,' + Math.round(my + dy * t - p.h / 2) + 'px)';
@@ -877,8 +878,8 @@ function showReadout(e, lines) {
   if (html !== readoutKey) { readoutKey = html; readoutEl.innerHTML = html; }
   readoutEl.hidden = false;
   const h = hero.getBoundingClientRect(), w = readoutEl.offsetWidth, ht = readoutEl.offsetHeight;
-  const x = Math.min(e.clientX - h.left + 18, h.width - w - 8), y = Math.min(e.clientY - h.top + 18, h.height - ht - 8);
-  readoutEl.style.transform = 'translate(' + Math.round(Math.max(8, x)) + 'px,' + Math.round(Math.max(8, y)) + 'px)';
+  const m = 8 * dp(), x = Math.min(e.clientX - h.left + 18 * dp(), h.width - w - m), y = Math.min(e.clientY - h.top + 18 * dp(), h.height - ht - m);
+  readoutEl.style.transform = 'translate(' + Math.round(Math.max(m, x)) + 'px,' + Math.round(Math.max(m, y)) + 'px)';
 }
 function hideReadout() { readoutEl.hidden = true; hoverPoint = null; if (layerOn.squares) globe?.markSquare(-1); terrain?.hideCursor(); }
 /** System view: coordinates and height of the point under the pointer, and what the current surface says there. */
@@ -1106,7 +1107,7 @@ requestAnimationFrame(frame);
   tab.addEventListener('click', () => { const open = box.classList.toggle('open'); document.body.classList.toggle('side-open', open); tab.setAttribute('aria-expanded', open); });
   // Drag the sidebar edge (or use the arrow keys on it) to set its width.
   const grip = document.getElementById('params-grip');
-  const setWidth = w => document.body.style.setProperty('--side-w', Math.round(Math.max(300, Math.min(w, 560, innerWidth * .6))) + 'px');
+  const setWidth = w => document.body.style.setProperty('--side-w', Math.round(Math.max(300 * dp(), Math.min(w, 560 * dp(), innerWidth * .6))) + 'px');
   grip.addEventListener('pointerdown', e => { e.preventDefault(); grip.setPointerCapture(e.pointerId); document.body.classList.add('side-drag'); });
   grip.addEventListener('pointermove', e => { if (document.body.classList.contains('side-drag')) setWidth(e.clientX); });
   const endDrag = () => document.body.classList.remove('side-drag');

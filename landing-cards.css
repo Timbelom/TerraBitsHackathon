@@ -9,22 +9,22 @@
    (labels regular, values semibold), so nothing depends on the muted tone over a moving background.
    A card is never taller than the room between the header and the time bar (275 px together); beyond
    that its content scrolls. */
-.card{position:absolute;left:0;top:0;width:312px;padding:var(--s3) var(--s4) var(--s4);background:var(--surface);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);border:1px solid var(--line);border-radius:var(--r-outer);color:var(--text);font-size:14px;line-height:1.5;max-height:calc(100% - 275px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgb(255 255 255 / .3) transparent;pointer-events:auto;cursor:grab;touch-action:none;user-select:none;animation:card-in var(--t-fast) var(--ease)}
+.card{position:absolute;left:0;top:0;width:calc(312 * var(--dp));padding:var(--s3) var(--s4) var(--s4);background:var(--surface);-webkit-backdrop-filter:blur(calc(18 * var(--dp)));backdrop-filter:blur(calc(18 * var(--dp)));border:1px solid var(--line);border-radius:var(--r-outer);color:var(--text);font-size:calc(14 * var(--dp));line-height:1.5;max-height:calc(100% - calc(275 * var(--dp)));overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgb(255 255 255 / .3) transparent;pointer-events:auto;cursor:grab;touch-action:none;user-select:none;animation:card-in var(--t-fast) var(--ease)}
 .card[hidden]{display:none}
 .card.moving{cursor:grabbing}
-.card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.card:focus-visible{outline:calc(2 * var(--dp)) solid var(--accent);outline-offset:calc(2 * var(--dp))}
 .card header{display:flex;align-items:center;gap:var(--s2)}
 /* Name: a field that reads as the title; click to rename */
-.card-name{flex:1;min-width:0;height:32px;margin-left:calc(-1 * var(--s2));padding:0 var(--s2);background:none;border:1px solid transparent;border-radius:var(--r-inner);outline:0;color:var(--text);font:600 16px var(--font-ui);font-variant-numeric:tabular-nums;text-overflow:ellipsis;cursor:text;-webkit-user-select:text;user-select:text;transition:border-color var(--t-fast),background var(--t-fast)}
+.card-name{flex:1;min-width:0;height:calc(32 * var(--dp));margin-left:calc(-1 * var(--s2));padding:0 var(--s2);background:none;border:1px solid transparent;border-radius:var(--r-inner);outline:0;color:var(--text);font:600 calc(16 * var(--dp)) var(--font-ui);font-variant-numeric:tabular-nums;text-overflow:ellipsis;cursor:text;-webkit-user-select:text;user-select:text;transition:border-color var(--t-fast),background var(--t-fast)}
 .card-name:hover{background:var(--field)}
 .card-name:focus-visible{background:var(--field);border-color:var(--accent)}
-.card-close{flex:none;display:grid;place-items:center;width:28px;height:28px;margin-right:calc(-1 * var(--s2));padding:0;background:none;border:0;border-radius:var(--r-inner);color:var(--text);cursor:pointer;transition:background var(--t-fast)}
-.card-close svg{width:12px;height:12px}
+.card-close{flex:none;display:grid;place-items:center;width:calc(28 * var(--dp));height:calc(28 * var(--dp));margin-right:calc(-1 * var(--s2));padding:0;background:none;border:0;border-radius:var(--r-inner);color:var(--text);cursor:pointer;transition:background var(--t-fast)}
+.card-close svg{width:calc(12 * var(--dp));height:calc(12 * var(--dp))}
 .card-close:hover{background:var(--surface-hover)}
-.card-close:focus-visible{outline:2px solid var(--accent);outline-offset:0}
+.card-close:focus-visible{outline:calc(2 * var(--dp)) solid var(--accent);outline-offset:0}
 .card-sub{margin:0;font-variant-numeric:tabular-nums}
 /* What the numbers rest on. Marked for a moment when better ground has arrived and the numbers were redone. */
-.card-ground{margin:0 calc(-1 * var(--s1));padding:0 var(--s1);border-radius:var(--r-inner);font-size:12px;line-height:18px;font-variant-numeric:tabular-nums}
+.card-ground{margin:0 calc(-1 * var(--s1));padding:0 var(--s1);border-radius:var(--r-inner);font-size:calc(12 * var(--dp));line-height:calc(18 * var(--dp));font-variant-numeric:tabular-nums}
 .card-ground.changed{animation:card-ground calc(var(--t-panel) * 4) var(--ease)}
 @keyframes card-ground{from{background:var(--accent);color:var(--accent-ink)}}
 .card dl{display:grid;grid-template-columns:auto 1fr;column-gap:var(--s3);margin:var(--s2) 0 0;line-height:1.45}
@@ -41,24 +41,21 @@
 .card-delay{margin-top:var(--s2)}
 .card-delay-days{display:flex;margin:0 -1px}
 .card-delay-days[hidden]{display:none}
-.card-day{flex:1;min-width:0;height:16px;padding:var(--s1) 1px;background:none;border:0;cursor:pointer}
+.card-day{flex:1;min-width:0;height:calc(16 * var(--dp));padding:var(--s1) 1px;background:none;border:0;cursor:pointer}
 .card-day::before{content:"";display:block;height:100%;background:var(--good)}
-.card-day.bad::before{background:none;box-shadow:inset 0 0 0 1.5px var(--bad)}
-.card-delay.coarse .card-day::before{background:repeating-linear-gradient(135deg,var(--good) 0 1.5px,transparent 1.5px 4px)}
-.card-delay.coarse .card-day.bad::before{background:repeating-linear-gradient(135deg,var(--bad) 0 1px,transparent 1px 5px)}
+.card-day.bad::before{background:none;box-shadow:inset 0 0 0 calc(1.5 * var(--dp)) var(--bad)}
+.card-delay.coarse .card-day::before{background:repeating-linear-gradient(135deg,var(--good) 0 calc(1.5 * var(--dp)),transparent calc(1.5 * var(--dp)) calc(4 * var(--dp)))}
+.card-delay.coarse .card-day.bad::before{background:repeating-linear-gradient(135deg,var(--bad) 0 1px,transparent 1px calc(5 * var(--dp)))}
 .card-day:hover::before{outline:1px solid var(--text);outline-offset:1px}
-.card-day:focus-visible{outline:2px solid var(--accent);outline-offset:-1px}
-.card-delay-text{margin:0;font-size:12px;line-height:18px;font-variant-numeric:tabular-nums}
+.card-day:focus-visible{outline:calc(2 * var(--dp)) solid var(--accent);outline-offset:-1px}
+.card-delay-text{margin:0;font-size:calc(12 * var(--dp));line-height:calc(18 * var(--dp));font-variant-numeric:tabular-nums}
 .card-delay-text b{font-weight:600}.card-delay-text b.good{color:var(--good)}.card-delay-text b.bad{color:var(--bad)}
-.card-terrain{display:block;width:100%;height:36px;margin-top:var(--s3);padding:0;background:var(--accent);border:1px solid transparent;border-radius:var(--r-inner);color:var(--accent-ink);font:600 14px var(--font-ui);cursor:pointer;transition:opacity var(--t-fast)}
+.card-terrain{display:block;width:100%;height:calc(36 * var(--dp));margin-top:var(--s3);padding:0;background:var(--accent);border:1px solid transparent;border-radius:var(--r-inner);color:var(--accent-ink);font:600 calc(14 * var(--dp)) var(--font-ui);cursor:pointer;transition:opacity var(--t-fast)}
 .card-terrain:hover{opacity:.86}
-.card-terrain:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.card-terrain:focus-visible{outline:calc(2 * var(--dp)) solid var(--accent);outline-offset:calc(2 * var(--dp))}
 @keyframes card-in{from{opacity:0}}
 @media(prefers-reduced-motion:reduce){.card,.card-ground.changed{animation:none}.card-close,.card-name,.card-terrain{transition:none}}
 /* In the terrain view the card stands under the bar that names the place; it may then be shorter than its content */
-body.terrain .card{max-height:calc(100% - 260px)}
-/* Window size. From 1280 px of width the header is 119 px high instead of 85 (landing-search.css), so the room for a card is 34 px less.
-   In a short window the card is set tighter, so it fits between the header and the time bar; what still does not fit scrolls. */
-@media(min-width:1280px){.card{max-height:calc(100% - 309px)}body.terrain .card{max-height:calc(100% - 294px)}}
-@media(max-height:820px){.card{padding:var(--s2) var(--s3) var(--s3);font-size:13px;line-height:1.4}.card dl{line-height:1.36;margin-top:var(--s1)}.card-name{height:28px;font-size:15px}.card-span,.card-delay{margin-top:var(--s1)}.card-ground,.card-delay-text{line-height:16px}.card-terrain{height:32px;margin-top:var(--s2);font-size:13px}}
-@media(max-height:700px){.card{font-size:12px}.card dl{line-height:1.3}.card-day{height:14px}.card-terrain{height:28px}}
+body.terrain .card{max-height:calc(100% - calc(260 * var(--dp)))}
+/* The header is 119 px high (landing-search.css), 34 px more than the 85 px the two numbers above were set for. */
+.card{max-height:calc(100% - calc(309 * var(--dp)))}body.terrain .card{max-height:calc(100% - calc(294 * var(--dp)))}

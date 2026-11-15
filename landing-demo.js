@@ -26,6 +26,7 @@
 // would be in sunlight on 5 Feb 2028 (Sun 0.68 deg above the horizontal; the skyline there stands at 2.04 deg).
 
 import { createTour } from './landing-tour.js';
+import { dp } from './ui/scale.js';
 
 const HOUR = 3600000, DAY = 24 * HOUR;
 const PLAN = Date.UTC(2027, 10, 7, 12), SLIP = Date.UTC(2028, 1, 5, 12);
@@ -88,7 +89,7 @@ export function createDemo(api) {
   // Earth together, which stand far apart in the sky and need the whole width). The page centres its picture in what
   // is left (api.setInset), so what a shot is about stands free beside or above the text. The room opens, closes and changes sides gradually. In a narrow or upright window the text
   // lies across the bottom and the picture keeps the whole width.
-  const ZONE = .44, narrow = matchMedia('(max-width:900px),(max-aspect-ratio:11/10)');
+  const ZONE = .44, narrow = matchMedia('(max-width:585px),(max-aspect-ratio:11/10)');
   const inset = { l: 0, r: 0, b: 0 }; let place = 'right', insetAt = 0, zoneW = '';
   function insetFrame(now) {
     const dt = Math.min(now - insetAt, 100); insetAt = now;
@@ -400,17 +401,17 @@ export function createDemo(api) {
     for (const t of tags) {
       t.body.getWorldPosition(E); const d = E.distanceTo(camera.position), px = t.radius / d * k;
       E.project(camera);
-      const on = px < 90 && E.z < 1 && Math.abs(E.x) < 1 && Math.abs(E.y) < 1;
+      const on = px < 90 * dp() && E.z < 1 && Math.abs(E.x) < 1 && Math.abs(E.y) < 1;
       t.el.hidden = !on;
-      if (on) t.el.style.transform = 'translate(' + Math.round((E.x + 1) / 2 * W - left) + 'px,' + Math.round((1 - E.y) / 2 * h + px + 10) + 'px) translateX(-50%)';
+      if (on) t.el.style.transform = 'translate(' + Math.round((E.x + 1) / 2 * W - left) + 'px,' + Math.round((1 - E.y) / 2 * h + px + 10 * dp()) + 'px) translateX(-50%)';
     }
-    if (lander?.visible) { lander.getWorldPosition(E); put(landerTag, E, camera, lander.scale.x * 1.1 / E.distanceTo(camera.position) * k + 10); } else landerTag.hidden = true;
-    const x0 = 80 + inset.l, x1 = w - inset.r - 40, y0 = 104, y1 = h - inset.b - 40 - (narrow.matches ? el.panel.offsetHeight + 16 : legendEl && !legendEl.hidden ? legendEl.offsetHeight + 24 : 0), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    if (lander?.visible) { lander.getWorldPosition(E); put(landerTag, E, camera, lander.scale.x * 1.1 / E.distanceTo(camera.position) * k + 10 * dp()); } else landerTag.hidden = true;
+    const q = dp(), x0 = 80 * q + inset.l, x1 = w - inset.r - 40 * q, y0 = 104 * q, y1 = h - inset.b - 40 * q - (narrow.matches ? el.panel.offsetHeight + 16 * q : legendEl && !legendEl.hidden ? legendEl.offsetHeight + 24 * q : 0), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
     for (const wy of ways) {
       wy.body.getWorldPosition(E); C.copy(E).applyMatrix4(camera.matrixWorldInverse); E.project(camera);
       const sx = (E.x + 1) / 2 * W - left, sy = (1 - E.y) / 2 * h, inside = C.z < 0 && sx > x0 && sx < x1 && sy > y0 && sy < y1;
       wy.el.hidden = inside && !wy.named; wy.el.classList.toggle('there', inside);
-      if (inside) { if (wy.named) wy.el.style.transform = 'translate(' + Math.round(sx) + 'px,' + Math.round(sy + 26) + 'px) translateX(-50%)'; continue; }
+      if (inside) { if (wy.named) wy.el.style.transform = 'translate(' + Math.round(sx) + 'px,' + Math.round(sy + 26 * dp()) + 'px) translateX(-50%)'; continue; }
       let dx = C.z < 0 ? sx - cx : C.x, dy = C.z < 0 ? sy - cy : -C.y; const n = Math.hypot(dx, dy) || 1; dx /= n; dy /= n;
       const t = Math.min(dx > 0 ? (x1 - cx) / dx : dx < 0 ? (x0 - cx) / dx : Infinity, dy > 0 ? (y1 - cy) / dy : dy < 0 ? (y0 - cy) / dy : Infinity);
       wy.el.style.transform = 'translate(' + Math.round(cx + dx * t) + 'px,' + Math.round(cy + dy * t) + 'px) translate(-50%,-50%)';

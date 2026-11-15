@@ -1,28 +1,28 @@
 /* Solar elevation time series (landing-series.js). Values from tokens.css only; the line colours are data
    colours set by the script. Same surface as the info cards; opens top right of the scene and can be dragged.
    Text wears text tokens; a coloured mark beside a name carries identity. */
-.series{position:absolute;left:0;top:0;z-index:5;width:min(640px,calc(100% - 2 * var(--s4)));padding:var(--s4) var(--s5) var(--s4);background:var(--surface);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);border:1px solid var(--line);border-radius:var(--r-outer);color:var(--text);font-family:var(--font-ui);font-size:16px;line-height:1.75;user-select:none;cursor:grab;touch-action:none;animation:series-in var(--t-fast) var(--ease)}
+.series{position:absolute;left:0;top:0;z-index:5;width:min(calc(640 * var(--dp)),calc(100% - 2 * var(--s4)));padding:var(--s4) var(--s5) var(--s4);background:var(--surface);-webkit-backdrop-filter:blur(calc(18 * var(--dp)));backdrop-filter:blur(calc(18 * var(--dp)));border:1px solid var(--line);border-radius:var(--r-outer);color:var(--text);font-family:var(--font-ui);font-size:calc(16 * var(--dp));line-height:1.75;user-select:none;cursor:grab;touch-action:none;animation:series-in var(--t-fast) var(--ease)}
 .series[hidden],.entering .series{display:none}
 .series.moving{cursor:grabbing}
 /* Corner grips: resize the panel. Only the lower right one carries a mark. */
-.series-grip{position:absolute;width:20px;height:20px;touch-action:none;color:var(--text-muted)}
-.series-grip.nw{left:-4px;top:-4px;cursor:nwse-resize}.series-grip.se{right:-4px;bottom:-4px;cursor:nwse-resize}
-.series-grip.ne{right:-4px;top:-4px;cursor:nesw-resize}.series-grip.sw{left:-4px;bottom:-4px;cursor:nesw-resize}
-.series-grip svg{position:absolute;right:7px;bottom:7px;width:12px;height:12px}
-.series:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.series-grip{position:absolute;width:calc(20 * var(--dp));height:calc(20 * var(--dp));touch-action:none;color:var(--text-muted)}
+.series-grip.nw{left:calc(-4 * var(--dp));top:calc(-4 * var(--dp));cursor:nwse-resize}.series-grip.se{right:calc(-4 * var(--dp));bottom:calc(-4 * var(--dp));cursor:nwse-resize}
+.series-grip.ne{right:calc(-4 * var(--dp));top:calc(-4 * var(--dp));cursor:nesw-resize}.series-grip.sw{left:calc(-4 * var(--dp));bottom:calc(-4 * var(--dp));cursor:nesw-resize}
+.series-grip svg{position:absolute;right:calc(7 * var(--dp));bottom:calc(7 * var(--dp));width:calc(12 * var(--dp));height:calc(12 * var(--dp))}
+.series:focus-visible{outline:calc(2 * var(--dp)) solid var(--accent);outline-offset:calc(2 * var(--dp))}
 .series header{display:flex;align-items:center;gap:var(--s3)}
-.series h2{margin:0;font:600 20px var(--font-ui);letter-spacing:0}
+.series h2{margin:0;font:600 calc(20 * var(--dp)) var(--font-ui);letter-spacing:0}
 .series-time{margin-left:auto;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
-.series-close{flex:none;display:grid;place-items:center;width:36px;height:36px;margin-right:calc(-1 * var(--s2));padding:0;background:none;border:0;border-radius:var(--r-inner);color:var(--text);cursor:pointer;transition:background var(--t-fast)}
-.series-close svg{width:14px;height:14px}
+.series-close{flex:none;display:grid;place-items:center;width:calc(36 * var(--dp));height:calc(36 * var(--dp));margin-right:calc(-1 * var(--s2));padding:0;background:none;border:0;border-radius:var(--r-inner);color:var(--text);cursor:pointer;transition:background var(--t-fast)}
+.series-close svg{width:calc(14 * var(--dp));height:calc(14 * var(--dp))}
 .series-close:hover{background:var(--surface-hover)}
-.series-close:focus-visible{outline:2px solid var(--accent);outline-offset:0}
-.series-plot{display:block;width:100%;height:300px;margin-top:var(--s3);cursor:crosshair;touch-action:none}
+.series-close:focus-visible{outline:calc(2 * var(--dp)) solid var(--accent);outline-offset:0}
+.series-plot{display:block;width:100%;height:calc(300 * var(--dp));margin-top:var(--s3);cursor:crosshair;touch-action:none}
 .series-grid{stroke:var(--text);stroke-opacity:.12;stroke-width:1}
 .series-axis{fill:none;stroke:var(--text);stroke-opacity:.6;stroke-width:1}
 .series-zero{stroke:var(--text);stroke-opacity:.6;stroke-width:1}
 /* Axis labels as in the info cards: full text colour, read at a glance beside the scene */
-.series-tick{fill:var(--text);font:500 14px var(--font-ui);font-variant-numeric:tabular-nums}
+.series-tick{fill:var(--text);font:500 calc(14 * var(--dp)) var(--font-ui);font-variant-numeric:tabular-nums}
 .series-tick2{font-weight:400}
 .series-dot{stroke:#111214;stroke-width:2}
 .series-line{fill:none;stroke-width:2.5;stroke-linejoin:round;stroke-linecap:round}
@@ -33,15 +33,15 @@
 .series-hover{stroke:var(--text);stroke-opacity:.5;stroke-width:1;stroke-dasharray:3 3}
 .series-legend{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s1) var(--s5);margin:var(--s3) 0 0;padding:0;list-style:none}
 .series-legend li{display:flex;align-items:center;gap:var(--s2);min-width:0}
-.series-legend i{flex:none;width:12px;height:12px;border-radius:50%}
+.series-legend i{flex:none;width:calc(12 * var(--dp));height:calc(12 * var(--dp));border-radius:50%}
 .series-legend span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .series-legend b{flex:none;font-weight:600;font-variant-numeric:tabular-nums}
 .series-more{grid-column:1/-1}
 @keyframes series-in{from{opacity:0}}
-@media(max-width:560px){.series-legend{grid-template-columns:1fr}}
+@media(max-width:364px){.series-legend{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){.series{animation:none}.series-close{transition:none}}
 /* No marked point: a line of text instead of the plot. */
 .series-empty{display:none;margin:var(--s3) 0 0;color:var(--text-muted)}
 .series.empty .series-empty{display:block}.series.empty .series-plot,.series.empty .series-legend{display:none}
 /* Header switch for the panel */
-.site-header nav a[aria-pressed="true"]{text-decoration:underline;text-underline-offset:6px;text-decoration-thickness:1px}
+.site-header nav a[aria-pressed="true"]{text-decoration:underline;text-underline-offset:calc(6 * var(--dp));text-decoration-thickness:1px}

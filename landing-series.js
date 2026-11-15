@@ -18,15 +18,19 @@
 // in the legend; a click sets the clock there.
 // Colours: fixed order, validated for the dark surface (dataviz palette, 8 slots). A point keeps its colour
 // while it is marked. More than 8 marked points: the first 8 are drawn, the panel says how many are left out.
+import { dp, onScale } from './ui/scale.js';
 import { DAY_MS, SYNODIC_DAYS } from './core/sky.js';
 import { siteState, IN_VIEW } from './core/visibility.js';
 
 const COLORS = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#0ca30c', '#9085e9', '#e66767'];
 const NS = 'http://www.w3.org/2000/svg', HOUR = 3600000, CYCLE_MS = SYNODIC_DAYS * DAY_MS;
-const M = { l: 56, r: 16, t: 12, b: 48 };                 // plot margins, px; b grows by the light bands
-const BASE_B = 48, BAND_H = 4, BAND_GAP = 2, BAND_TOP = 9; // light bands between the time axis and its labels
+const M = { l: 56, r: 16, t: 12, b: 48 };   // set in design px times dp() below
+//                 // plot margins, px; b grows by the light bands
+let BASE_B, BAND_H, BAND_GAP, BAND_TOP, EDGE, TOP, MIN_W, MIN_PLOT_H;
+onScale(k => { M.l = 56 * k; M.r = 16 * k; M.t = 12 * k; M.b = 48 * k; BASE_B = 48 * k; BAND_H = 4 * k; BAND_GAP = 2 * k; BAND_TOP = 9 * k; EDGE = 16 * k; TOP = 93 * k; MIN_W = 420 * k; MIN_PLOT_H = 220 * k; });
+// // light bands between the time axis and its labels
 const Y_MAX = 90, Y_STEP = 30;                          // elevation axis, deg
-const EDGE = 16, TOP = 93, MIN_W = 420, MIN_PLOT_H = 220, FREE_CYCLES = 2;             // px: gap to the hero's edge, clear of the header; lunar days shown without a span                 // plot margins, px
+const FREE_CYCLES = 2;   //             // px: gap to the hero's edge, clear of the header; lunar days shown without a span                 // plot margins, px
 const PER_CYCLE = 48, MIN_N = 240, MAX_N = 4000;        // samples: 48 per lunar day, within these limits
 const X_STEPS = [.25, .5, 1, 2, 5, 10, 15, 30, 60, 90, 180, 365, 730, 1826, 3652];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -137,7 +141,7 @@ export function createSeries({ hero, marked, now, window: timeWindow, setTime, o
     const kids = [];
     for (let v = -Y_MAX; v <= Y_MAX; v += Y_STEP) {
       kids.push(svgEl('line', { class: v === 0 ? 'series-zero' : 'series-grid', x1: M.l, x2: W - M.r, y1: yOf(v).toFixed(1), y2: yOf(v).toFixed(1) }));
-      const t = svgEl('text', { class: 'series-tick', x: M.l - 10, y: (yOf(v) + 5).toFixed(1), 'text-anchor': 'end' });
+      const t = svgEl('text', { class: 'series-tick', x: M.l - 10 * dp(), y: (yOf(v) + 5 * dp()).toFixed(1), 'text-anchor': 'end' });
       t.textContent = v === 0 ? '0°' : angle(v, 0); kids.push(t);
     }
     let lower = '';
@@ -145,9 +149,9 @@ export function createSeries({ hero, marked, now, window: timeWindow, setTime, o
       const x = xOf(v * DAY_MS), [up, low] = xLabel(v * DAY_MS, xt.step, spanDays);
       const anchor = x > W - M.r - 28 ? 'end' : x < M.l + 28 ? 'start' : 'middle';
       kids.push(svgEl('line', { class: 'series-grid', x1: x.toFixed(1), x2: x.toFixed(1), y1: M.t, y2: H - M.b }));
-      kids.push(svgEl('line', { class: 'series-axis', x1: x.toFixed(1), x2: x.toFixed(1), y1: H - M.b, y2: H - M.b + 5 }));
-      const t = svgEl('text', { class: 'series-tick', x: x.toFixed(1), y: H - M.b + 21 + bands, 'text-anchor': anchor }); t.textContent = up; kids.push(t);
-      if (low !== lower) { lower = low; const u = svgEl('text', { class: 'series-tick series-tick2', x: x.toFixed(1), y: H - M.b + 40 + bands, 'text-anchor': anchor }); u.textContent = low; kids.push(u); }
+      kids.push(svgEl('line', { class: 'series-axis', x1: x.toFixed(1), x2: x.toFixed(1), y1: H - M.b, y2: H - M.b + 5 * dp() }));
+      const t = svgEl('text', { class: 'series-tick', x: x.toFixed(1), y: H - M.b + 21 * dp() + bands, 'text-anchor': anchor }); t.textContent = up; kids.push(t);
+      if (low !== lower) { lower = low; const u = svgEl('text', { class: 'series-tick series-tick2', x: x.toFixed(1), y: H - M.b + 40 * dp() + bands, 'text-anchor': anchor }); u.textContent = low; kids.push(u); }
     }
     kids.push(svgEl('path', { class: 'series-axis', d: 'M' + M.l + ' ' + M.t + 'V' + (H - M.b) + 'H' + (W - M.r) }));     // the two axes
     sites.forEach((s, i) => {

@@ -22,6 +22,7 @@
 // where it was put and the others keep clear of it.
 // While a site is behind the limb its marker, line and card are hidden; the card comes back with the site
 // (a card that was not moved by hand then looks for its place again).
+import { dp, onScale } from './ui/scale.js';
 import { siteSky, DAY_MS } from './core/sky.js';
 import { siteState, nextChange, spanMetrics, basisLabel, IN_VIEW, HOUR_MS } from './core/visibility.js';
 import { delayTable, delayVerdict, delayText, delayStep, DELAY_DAYS, DEFAULT_MISSION_MS } from './core/delay.js';
@@ -31,10 +32,12 @@ import { coordText } from './landing-pins.js';
 // cycle of the lunar nodes, so every libration state has occurred). Nothing found in that time is shown as "never".
 const HOUR = HOUR_MS, SEARCH_MS = 19 * 365.25 * DAY_MS, REFRESH_MS = 200;
 const MAX_SAMPLES = 9000;                                        // span metrics: hourly up to a year, coarser steps beyond
-const LINE_CLEAR = 5, LINE_PAST = 14;                            // px; a line keeps this far from other cards, and turns this far past them
-const GAP = 48, BETWEEN = 12, EDGE = 16, TOP = 93, LEFT = 72;   // px; TOP clears the header, LEFT the Parameters tab
+let LINE_CLEAR, LINE_PAST, GAP, BETWEEN, EDGE, TOP, LEFT;   // design px times dp(), see ui/scale.js
+onScale(k => { LINE_CLEAR = 5 * k; LINE_PAST = 14 * k; GAP = 48 * k; BETWEEN = 12 * k; EDGE = 16 * k; TOP = 93 * k; LEFT = 72 * k; });
+//                            // px; a line keeps this far from other cards, and turns this far past them
+//   // px; TOP clears the header, LEFT the Parameters tab
 // The header is 85 px high, 119 px in windows from 1280 px (landing-search.css): cards and table start below whichever it is.
-const headTop = () => Math.max(TOP, (document.querySelector('.site-header')?.offsetHeight ?? 0) + 8);
+const headTop = () => Math.max(TOP, (document.querySelector('.site-header')?.offsetHeight ?? 0) + EDGE / 2);
 const CLOSE_SVG = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8"/></svg>';
 const body = (word, id) => '<dl><dt>Sub-' + (id === 'sun' ? 'solar' : 'Earth') + ' point</dt><dd data-f="' + id + 'Sub"></dd><dt>' + (id === 'sun' ? 'Solar' : 'Earth') + ' elevation</dt><dd data-f="' + id + 'El"></dd>'
   + '<dt>' + word + '\u2019s disk in view</dt><dd data-f="' + id + 'Frac"></dd><dt data-f="' + id + 'Lab"></dt><dd data-f="' + id + 'In"></dd></dl>';

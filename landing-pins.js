@@ -11,10 +11,12 @@
 // selected nor has a card. A free marker that was given a name is saved for the browser session
 // (sessionStorage): it is listed in the search and comes back after a reload. Names given to listed
 // sites are kept the same way. Clearing the name of a saved marker makes it a plain free marker again.
+import { dp, onScale } from './ui/scale.js';
 import * as THREE from 'three';
 
 const PIN_SVG = '<svg viewBox="0 0 24 32" aria-hidden="true"><path d="M12 31.2S2.8 19.9 2.8 11.6a9.2 9.2 0 0 1 18.4 0C21.2 19.9 12 31.2 12 31.2Z"/><circle cx="12" cy="11.6" r="3.2"/><text x="12" y="15.6" text-anchor="middle"></text></svg>';
-const CLUSTER = 30, TURN_MS = 700, TILT_MAX = Math.PI / 2;       // TILT_MAX: same limit as dragging in landing.js (a pole can face the camera)
+let CLUSTER; onScale(k => { CLUSTER = 30 * k; });   // design px times dp(), see ui/scale.js
+const TURN_MS = 700, TILT_MAX = Math.PI / 2;       // TILT_MAX: same limit as dragging in landing.js (a pole can face the camera)
 const rad = THREE.MathUtils.degToRad;
 export const coordText = s => Math.abs(s.lat).toFixed(4) + '° ' + (s.lat < 0 ? 'S' : 'N') + ', ' + s.lon.toFixed(4) + '° E';
 

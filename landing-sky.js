@@ -17,16 +17,20 @@
 // line below it; a disc is filled where it is above the skyline and a dashed outline below it.
 // The courses are sampled when point, span or ground change (240 samples per lunar day); the plot is redrawn when
 // its size changes as well; each frame only the two discs move.
+import { dp, onScale } from './ui/scale.js';
 import { DAY_MS, SYNODIC_DAYS } from './core/sky.js';
 import { siteState, basisLabel } from './core/visibility.js';
 import { ticks } from './landing-series.js';
 
 const BODIES = [{ id: 'sun', name: 'Sun', color: '#c98500' }, { id: 'earth', name: 'Earth', color: '#3987e5' }];   // data colours of the time series palette
 const NS = 'http://www.w3.org/2000/svg', CYCLE_MS = SYNODIC_DAYS * DAY_MS;
-const M = { l: 56, r: 16, t: 12, b: 48 };                 // plot margins, px
-const EDGE = 16, TOP = 93, LEFT = 72, MIN_W = 420, MAX_W = 640;   // px: gap to the hero's edge, clear of the header and of the sidebar's tab
+const M = { l: 56, r: 16, t: 12, b: 48 };   // set in design px times dp() below
+//                 // plot margins, px
+let EDGE, TOP, LEFT, MIN_W, MAX_W, MIN_DISC;
+onScale(k => { M.l = 56 * k; M.r = 16 * k; M.t = 12 * k; M.b = 48 * k; EDGE = 16 * k; TOP = 93 * k; LEFT = 72 * k; MIN_W = 420 * k; MAX_W = 640 * k; MIN_DISC = 3 * k; });
+//   // px: gap to the hero's edge, clear of the header and of the sidebar's tab
 const PER_CYCLE = 240, MIN_N = 240, MAX_N = 6000;         // samples of a course: 1.5 deg of the Sun's azimuth apart
-const Y_STEPS = [.5, 1, 2, 5, 10, 15, 30, 45], MIN_RANGE = 4, PAD = .08, MIN_DISC = 3;   // deg, deg, share of the range, px
+const Y_STEPS = [.5, 1, 2, 5, 10, 15, 30, 45], MIN_RANGE = 4, PAD = .08;   // deg, deg, share of the range, px
 const COMPASS = ['N', 'E', 'S', 'W', 'N'];
 const CLOSE_SVG = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8"/></svg>';
 const angle = (d, digits = 1) => (d < 0 ? '−' : '+') + Math.abs(d).toFixed(digits) + '°';
@@ -127,7 +131,7 @@ export function createSky({ hero, marked, picked, now, window: timeWindow, onClo
     const yt = ticks(data.lo, data.hi, Y_STEPS, Math.max(2, Math.floor((b - t) / 24)));
     for (const v of yt.values) {
       kids.push(svgEl('line', { class: v === 0 ? 'series-zero' : 'series-grid', x1: l, x2: r, y1: yOf(v).toFixed(1), y2: yOf(v).toFixed(1) }));
-      const tx = svgEl('text', { class: 'series-tick', x: l - 10, y: (yOf(v) + 5).toFixed(1), 'text-anchor': 'end' });
+      const tx = svgEl('text', { class: 'series-tick', x: l - 10 * dp(), y: (yOf(v) + 5 * dp()).toFixed(1), 'text-anchor': 'end' });
       tx.textContent = v === 0 ? '0°' : angle(v, yt.step < 1 ? 1 : 0); kids.push(tx);
     }
     for (let az = 0; az <= 360; az += 45) {
@@ -135,9 +139,9 @@ export function createSky({ hero, marked, picked, now, window: timeWindow, onClo
       kids.push(svgEl('line', { class: 'series-grid', x1: x, x2: x, y1: t, y2: b }));
       if (az % 90) continue;
       const anchor = az === 0 ? 'start' : az === 360 ? 'end' : 'middle';
-      kids.push(svgEl('line', { class: 'series-axis', x1: x, x2: x, y1: b, y2: b + 5 }));
-      const up = svgEl('text', { class: 'series-tick', x, y: b + 21, 'text-anchor': anchor }); up.textContent = COMPASS[az / 90];
-      const low = svgEl('text', { class: 'series-tick series-tick2', x, y: b + 40, 'text-anchor': anchor }); low.textContent = az + '°';
+      kids.push(svgEl('line', { class: 'series-axis', x1: x, x2: x, y1: b, y2: b + 5 * dp() }));
+      const up = svgEl('text', { class: 'series-tick', x, y: b + 21 * dp(), 'text-anchor': anchor }); up.textContent = COMPASS[az / 90];
+      const low = svgEl('text', { class: 'series-tick series-tick2', x, y: b + 40 * dp(), 'text-anchor': anchor }); low.textContent = az + '°';
       kids.push(up, low);
     }
     const inBox = svgEl('g', { 'clip-path': 'url(#sky-clip-plot)' }), sky = svgEl('g', { 'clip-path': 'url(#sky-clip-open)' }), sky2 = svgEl('g', { 'clip-path': 'url(#sky-clip-open)' });
@@ -171,9 +175,9 @@ export function createSky({ hero, marked, picked, now, window: timeWindow, onClo
       m.label.style.display = inside ? '' : 'none';
       if (inside) {
         // the Sun's name to the right of its disc, the Earth's to the left (they can stand in one place); the other side at the plot's edge
-        const right = m.id === 'sun' ? x + r + 6 + 48 < W - M.r : x - r - 6 - 48 < M.l;
-        m.label.setAttribute('x', (right ? x + r + 6 : x - r - 6).toFixed(1)); m.label.setAttribute('text-anchor', right ? 'start' : 'end');
-        m.label.setAttribute('y', Math.max(M.t + 14, y - r - 4).toFixed(1));
+        const right = m.id === 'sun' ? x + r + 54 * dp() < W - M.r : x - r - 54 * dp() < M.l;
+        m.label.setAttribute('x', (right ? x + r + 6 * dp() : x - r - 6 * dp()).toFixed(1)); m.label.setAttribute('text-anchor', right ? 'start' : 'end');
+        m.label.setAttribute('y', Math.max(M.t + 14 * dp(), y - r - 4 * dp()).toFixed(1));
       }
     }
     if (!text) return; lastRead = p;
