@@ -107,3 +107,51 @@ body.side-drag,body.side-drag *{transition:none!important;cursor:col-resize!impo
 .param[aria-pressed="true"] i::after{transform:translateX(calc(var(--u) * 2.8));background:var(--accent-ink)}
 .param:focus-visible,.params-tab:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @media(prefers-reduced-motion:reduce){.params,.site-header,.hero,.params-tab svg,.param i::after{transition:none}}
+
+/* L.U.N.A. stakeholder pitch & team cards — start */
+/* Scope every new rule to the sections below: existing viewer and controls stay untouched. */
+.story.story--stakeholders{min-height:0;display:block;padding:clamp(74px,8vw,124px) clamp(24px,7vw,120px);background:#080e17}
+.story-two-up{width:min(100%,1420px);margin-inline:auto;display:grid;grid-template-columns:minmax(0,1.06fr) minmax(0,.94fr);gap:clamp(40px,6.5vw,112px);align-items:start}
+.story-column{min-width:0}
+.story--stakeholders .story-index,.contacts--team .story-index{font-size:11px;font-weight:500;letter-spacing:.22em;color:#a1bacd}
+.story--stakeholders .story-kicker{margin:42px 0 0;max-width:none;font-size:11px;line-height:1.5;font-weight:600;letter-spacing:.2em;color:#d5e5ef}
+.story--stakeholders h2{font-size:clamp(39px,4.1vw,68px);letter-spacing:-.06em;line-height:1.08;margin:15px 0 26px;overflow-wrap:normal}
+.story--stakeholders .story-intro{font-size:17px;line-height:1.8;color:#bed0dc;max-width:660px;margin:0}
+.story--stakeholders .value-points{margin:31px 0 24px;padding:0;list-style:none;border-top:1px solid #ffffff27;max-width:690px}
+.story--stakeholders .value-points li{padding:17px 0;border-bottom:1px solid #ffffff1b;display:grid;grid-template-columns:minmax(135px,.66fr) minmax(0,1fr);gap:17px}
+.story--stakeholders .value-points strong{font-size:13px;line-height:1.55;font-weight:600;color:#edf4f7}
+.story--stakeholders .value-points span{font-size:13px;line-height:1.65;font-weight:300;color:#99aebb}
+.story--stakeholders .underlink{display:inline-block;margin-top:23px}
+.story--stakeholders .story-mission{padding-left:clamp(28px,3.5vw,70px);border-left:1px solid #ffffff2d;min-height:100%}
+.story--stakeholders .story-mission h2{margin-top:56px}
+.story--stakeholders .story-mission p{max-width:620px;color:#a9bccb;font-size:16px;line-height:1.85;margin:0 0 21px}
+.story--stakeholders .story-mission .story-mission-footnote{font-size:12px;letter-spacing:.05em;color:#8a9fae;border-top:1px solid #ffffff27;margin-top:35px;padding-top:23px}
+.contacts.contacts--team{min-height:0;display:block;padding:clamp(80px,9vw,138px) clamp(24px,7vw,120px) clamp(75px,8vw,122px);background:#060a11}
+.contacts--team .team-heading,.contacts--team .team-grid,.contacts--team .team-thanks{width:min(100%,1420px);margin-left:auto;margin-right:auto}
+.contacts--team h2{font-size:clamp(39px,5.2vw,78px);line-height:1.1;margin:29px 0 16px}
+.contacts--team .team-heading>p{font-size:16px;line-height:1.75;max-width:740px;margin:0 0 48px;color:#9eafbd}
+.contacts--team .team-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:clamp(12px,1.8vw,27px);align-items:stretch}
+.contacts--team .team-card{border:1px solid #ffffff24;display:flex;flex-direction:column;background:linear-gradient(160deg,#0e1823,#090f18 76%);min-width:0;transition:transform .22s ease,border-color .22s ease}
+.contacts--team .team-card:hover{transform:translateY(-4px);border-color:#9bbccc75}
+.contacts--team .team-photo-link{display:block;aspect-ratio:4 / 4.2;overflow:hidden;background:#131d28}
+.contacts--team .team-photo{display:block;width:100%;height:100%;object-fit:cover;filter:saturate(.75);transition:transform .4s ease,filter .4s ease}
+.contacts--team .team-card:hover .team-photo{transform:scale(1.025);filter:saturate(1)}
+.contacts--team .team-card-body{display:flex;flex-direction:column;flex:1;padding:clamp(16px,1.8vw,27px)}
+.contacts--team .team-role{max-width:none;font-size:10px;line-height:1.5;color:#a8cbdc;font-weight:600;letter-spacing:.12em;text-transform:uppercase;margin:0 0 15px}
+.contacts--team h3{font-size:clamp(19px,1.65vw,25px);font-weight:400;line-height:1.18;letter-spacing:-.025em;margin:0 0 13px}
+.contacts--team .team-bio{max-width:none;font-size:13px;line-height:1.7;color:#9fb1c0;font-weight:300;margin:0 0 25px}
+.contacts--team .team-contribution{border-top:1px solid #ffffff21;margin-top:auto;padding-top:20px}
+.contacts--team .team-contribution>span{font-size:9px;font-weight:600;letter-spacing:.17em;color:#7f9bad}
+.contacts--team .team-contribution p{font-size:13px;line-height:1.65;color:#c3d1dc;margin:9px 0 18px;max-width:none}
+.contacts--team .team-link{display:inline-flex;align-items:center;align-self:flex-start;gap:4px;font-size:12px;font-weight:500;color:#b8d9ea;border-bottom:1px solid #8fb2c68c;padding-bottom:7px;transition:color .2s}
+.contacts--team .team-link:hover{color:#fff}
+.contacts--team .team-thanks{display:flex;justify-content:space-between;gap:24px;align-items:baseline;border-top:1px solid #ffffff29;margin-top:50px;padding-top:26px}
+.contacts--team .team-thanks>span{font-size:10px;letter-spacing:.2em;color:#9eb8ca;white-space:nowrap}
+.contacts--team .team-thanks p{font-size:14px;line-height:1.7;color:#9caebb;max-width:780px;margin:0}
+.contacts--team .team-thanks strong{font-weight:500;color:#eef4f8}
+@media(max-width:1050px){.contacts--team .team-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}.contacts--team .team-photo-link{aspect-ratio:4 / 3}.story-two-up{gap:32px}}
+@media(max-width:760px){.story.story--stakeholders{padding:80px 27px}.story-two-up{grid-template-columns:1fr;gap:65px}.story--stakeholders .story-mission{border-left:0;border-top:1px solid #ffffff32;padding:50px 0 0}.story--stakeholders .story-mission h2{margin-top:28px}.story--stakeholders .story-kicker{margin-top:30px}.story--stakeholders .value-points li{grid-template-columns:1fr;gap:7px;padding:16px 0}.contacts.contacts--team{padding:84px 27px}.contacts--team .team-thanks{display:block}.contacts--team .team-thanks p{margin-top:13px}}
+@media(max-width:520px){.contacts--team .team-grid{grid-template-columns:1fr;gap:20px}.contacts--team .team-photo-link{aspect-ratio:5 / 3}.contacts--team .team-card-body{padding:22px}.contacts--team .team-role{margin-bottom:11px}}
+@media(prefers-reduced-motion:reduce){.contacts--team .team-card,.contacts--team .team-photo{transition:none}}
+/* L.U.N.A. stakeholder pitch & team cards — end */
+
