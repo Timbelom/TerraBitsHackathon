@@ -25,7 +25,7 @@ const MAX_SAMPLES = 9000;                                        // span metrics
 const GAP = 48, BETWEEN = 12, EDGE = 16, TOP = 93, LEFT = 72;   // px; TOP clears the header, LEFT the Parameters tab
 const CLOSE_SVG = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8"/></svg>';
 const body = (word, id) => '<dl><dt>Sub-' + (id === 'sun' ? 'solar' : 'Earth') + ' point</dt><dd data-f="' + id + 'Sub"></dd><dt>' + (id === 'sun' ? 'Solar' : 'Earth') + ' elevation</dt><dd data-f="' + id + 'El"></dd>'
-  + '<dt>Horizon below the ' + word + '</dt>'<dd data-f="' + id + 'Hor"></dd><dt>' + word + '\u2019s disc in view</dt><dd data-f="' + id + 'Frac"></dd><dt data-f="' + id + 'Lab"></dt><dd data-f="' + id + 'In"></dd></dl>';
+  + '<dt>Horizon below the ' + word + '</dt><dd data-f="' + id + 'Hor"></dd><dt>' + word + '\u2019s disc in view</dt><dd data-f="' + id + 'Frac"></dd><dt data-f="' + id + 'Lab"></dt><dd data-f="' + id + 'In"></dd></dl>';
 const ROWS = body('Sun', 'sun') + body('Earth', 'earth')
   + '<p class="card-span" data-f="span"></p><dl class="card-limits"><dt>Sun in view</dt><dd data-f="sunShare"></dd><dt>Longest darkness</dt><dd data-f="sunGap"></dd>'
   + '<dt>Earth in view</dt><dd data-f="earthShare"></dd><dt>Longest DTE outage</dt><dd data-f="earthGap"></dd></dl><p class="card-basis" data-f="basis"></p>';
@@ -167,11 +167,26 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
       + (g.loading ? ', loading terrain …' : g.error ? ' (terrain not loaded: ' + g.error + ')' : '') + '.' + (m.stepH > 1 ? ' Sampled every ' + m.stepH + ' h.' : ''));
   }
 
+  // Docked: in the terrain view there is no Moon to stand beside. Only the card of that site is shown, top left,
+  // without a line; the others wait until the view is left.
+  let docked = null, dockTop = TOP;
+  function dock(id, top = TOP) {
+    docked = id; dockTop = top;
+    for (const c of cards.values()) { c.el.hidden = true; c.line.style.display = 'none'; c.docked = false; }   // every card finds its place again
+  }
+
   /** Call once per frame after pins.update(). */
   function update() {
     if (!cards.size) return;
     const t = performance.now(), refresh = t - lastFill > REFRESH_MS, ms = now();
     if (refresh) lastFill = t;
+    if (docked) {
+      const c = cards.get(docked); if (!c) return;
+      if (c.el.hidden) { c.el.hidden = false; fill(c, ms); }
+      if (refresh) { fill(c, ms); c.h = c.el.offsetHeight; }
+      if (!c.docked) { c.docked = true; moveTo(c, LEFT, dockTop); } else if (refresh) moveTo(c, c.x, c.y);
+      return;
+    }
     for (const c of cards.values()) {
       const s = c.site, vis = !!s.vis;
       if (c.el.hidden === vis) {                                                         // the site went behind the limb or came back
@@ -186,5 +201,5 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
       if (on) { c.line.setAttribute('x1', s.x.toFixed(1)); c.line.setAttribute('y1', s.y.toFixed(1)); c.line.setAttribute('x2', x.toFixed(1)); c.line.setAttribute('y2', y.toFixed(1)); }
     }
   }
-  return { update, open, close };
+  return { update, open, close, dock, has: id => cards.has(id) };
 }

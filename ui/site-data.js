@@ -22,7 +22,7 @@ export function createSiteData({ source, profileDir = 'expiry-date/', onChange }
     const k = keyOf(s);
     let e = entries.get(k);
     if (!e) {
-      e = { key: k, lat: s.lat, lon: s.lon, profile: null, profileState: s.horizonFile ? 'idle' : 'none', block: null, blockState: 'idle', blockError: null,
+      e = { key: k, lat: s.lat, lon: s.lon, profile: null, profileState: s.horizonFile ? 'idle' : 'none', block: null, coarse: null, blockState: 'idle', blockError: null,
             blockHorizon: null, globeHorizon: null, site: null, siteFor: null };
       entries.set(k, e);
       if (entries.size > 200) entries.delete(entries.keys().next().value);
@@ -31,7 +31,7 @@ export function createSiteData({ source, profileDir = 'expiry-date/', onChange }
   }
   function best(e) {
     if (e.profile) return e.profile;
-    if (e.block && !e.block.coarse) return e.blockHorizon ??= horizonFromBlock(e.block);
+    if (e.block) return e.blockHorizon ??= horizonFromBlock(e.block);
     if (globe) return e.globeHorizon ??= horizonFromGlobe(globe, e.lat, e.lon);
     return null;
   }
@@ -56,24 +56,29 @@ export function createSiteData({ source, profileDir = 'expiry-date/', onChange }
              loading: e.profileState === 'loading' || (e.blockState === 'loading' && !e.profile) };
   }
   function availability(s) { return source ? source.availability(s.lat, s.lon) : null; }
-  /** The loaded terrain block of a point, if any. */
+  /** The full-resolution terrain block of a point, if it has been loaded. */
   function block(s) { return entry(s).block; }
   /**
-   * The terrain block of a point: full resolution where a source has it, otherwise built from the global
-   * grid (block.coarse = true). Rejects only if neither is there.
+   * The terrain block of a point: full resolution where a source has it; where none has, or the transfer
+   * fails, a block built from the global grid (block.coarse = true; the reason is then in get(s).error).
+   * Rejects only if neither is there.
    */
-  function loadBlock(s, onProgress) {
+  async function loadBlock(s, onProgress) {
     const e = entry(s);
-    if (e.block && !e.block.coarse) { onProgress?.('download', 1); return Promise.resolve(e.block); }
-    if (!availability(s)) {
-      if (e.block) return Promise.resolve(e.block);
-      if (!globe) return Promise.reject(new Error('no terrain data loaded yet'));
-      e.block = blockFromGlobe(globe, e.lat, e.lon);
-      return Promise.resolve(e.block);
+    if (e.block) { onProgress?.('download', 1); return e.block; }
+    if (availability(s)) {
+      e.blockState = 'loading'; e.blockError = null;
+      try {
+        const b = await source.load(s.lat, s.lon, onProgress);
+        e.block = b; e.blockHorizon = null; e.blockState = 'ready'; bump();
+        return b;
+      } catch (err) { e.blockState = 'failed'; e.blockError = err.message; bump(); }
     }
-    e.blockState = 'loading'; e.blockError = null;
-    return source.load(s.lat, s.lon, onProgress).then(b => { e.block = b; e.blockHorizon = null; e.blockState = 'ready'; bump(); return b; },
-      err => { e.blockState = 'failed'; e.blockError = err.message; bump(); throw err; });
+    if (!e.coarse) {
+      if (!globe) throw new Error(e.blockError || 'no terrain data has loaded');
+      e.coarse = blockFromGlobe(globe, e.lat, e.lon);
+    }
+    return e.coarse;
   }
   function setGlobe(g) { globe = g; bump(); }
   function setSource(src) { source = src; for (const e of entries.values()) if (e.blockState === 'failed') e.blockState = 'idle'; bump(); }

@@ -177,18 +177,33 @@ export function horizonFromBlock(block) {
   return { ...h, heightM: block.centerHeightM, basis: block.coarse ? 'globe' : 'block', reachKm: block.farHalfKm, pixelM: block.sourceCellM, startKm: start };
 }
 
-/** Horizon from the global grid alone (7.6 km cells): the large shapes only, from two cells out to 300 km. */
-export function horizonFromGlobe(globe, latDeg, lonDeg) {
-  const b = localBasis(unitFromLatLon(latDeg, lonDeg)), z0 = globe.elevation(latDeg, lonDeg);
-  const cellKm = globe.cellDeg * RAD * MOON_RADIUS_KM;
-  const heightAt = (x, y) => {
+// Height of the global grid at a point of a site's flat map (x km east, y km north).
+function globeHeightAt(globe, b) {
+  return (x, y) => {
     const rho = Math.hypot(x, y), chi = rho / MOON_RADIUS_KM, cc = Math.cos(chi), sc = Math.sin(chi) / rho;
     const ux = cc * b.up[0] + sc * (x * b.east[0] + y * b.north[0]), uy = cc * b.up[1] + sc * (x * b.east[1] + y * b.north[1]), uz = cc * b.up[2] + sc * (x * b.east[2] + y * b.north[2]);
     return globe.elevation(Math.asin(Math.max(-1, Math.min(1, uz))) / RAD, Math.atan2(uy, ux) / RAD);
   };
-  const start = UNRESOLVED_PIXELS * cellKm;
-  const h = traceHorizon(heightAt, z0, range(start, 300, cellKm / 2));
+}
+
+/** Horizon from the global grid alone (7.6 km cells): the large shapes only, from two cells out to 300 km. */
+export function horizonFromGlobe(globe, latDeg, lonDeg) {
+  const b = localBasis(unitFromLatLon(latDeg, lonDeg)), z0 = globe.elevation(latDeg, lonDeg);
+  const cellKm = globe.cellDeg * RAD * MOON_RADIUS_KM, start = UNRESOLVED_PIXELS * cellKm;
+  const h = traceHorizon(globeHeightAt(globe, b), z0, range(start, 300, cellKm / 2));
   return { ...h, heightM: z0, basis: 'globe', reachKm: 300, pixelM: cellKm * 1000, startKm: start };
+}
+
+/** The same in one direction only: elevation angle (deg) of the skyline at an azimuth, for values under the pointer. */
+export function skylineFromGlobe(globe, latDeg, lonDeg, azDeg) {
+  const b = localBasis(unitFromLatLon(latDeg, lonDeg)), heightAt = globeHeightAt(globe, b), cellKm = globe.cellDeg * RAD * MOON_RADIUS_KM;
+  const r0 = MOON_RADIUS_KM + (globe.elevation(latDeg, lonDeg) + RECEIVER_HEIGHT_M) / 1000, sx = Math.sin(azDeg * RAD), sy = Math.cos(azDeg * RAD);
+  let best = -Infinity;
+  for (let d = UNRESOLVED_PIXELS * cellKm; d < 300; d += cellKm / 2) {
+    const rq = MOON_RADIUS_KM + heightAt(d * sx, d * sy) / 1000, g = d / MOON_RADIUS_KM, t = (rq * Math.cos(g) - r0) / (rq * Math.sin(g));
+    if (t > best) best = t;
+  }
+  return Math.atan(best) / RAD;
 }
 
 /** A 5 m site profile of Expiry Date (expiry-date/data/horizon_*.json) in the form used here. */
