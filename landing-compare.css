@@ -38,3 +38,5 @@
 .compare.empty .compare-empty{display:block}.compare.empty .compare-verdict,.compare.empty .compare-scroll{display:none}
 @keyframes compare-in{from{opacity:0}}
 @media(prefers-reduced-motion:reduce){.compare{animation:none}.compare-close{transition:none}}
+/* Short window: the table is set tighter, like the cards (landing-cards.css); what still does not fit scrolls inside it. */
+@media(max-height:820px){.compare{padding:var(--s3) var(--s4) var(--s4);font-size:14px;line-height:1.5}.compare h2{font-size:17px}.compare table{line-height:1.36}.compare thead small,.compare-plain th,.compare-plain td{font-size:12px}.compare thead th{min-width:170px}}

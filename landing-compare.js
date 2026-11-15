@@ -11,6 +11,8 @@
 // least (home()); it can be dragged (or moved with the arrow keys) and then stays where it was put.
 
 const EDGE = 16, TOP = 93, LEFT = 72, GAP = 24, REFRESH_MS = 200;      // px: gap to the hero's edge, clear of the header and of the Parameters tab
+// The header is 85 px high, 119 px in windows from 1280 px (landing-search.css): cards and table start below whichever it is.
+const headTop = () => Math.max(TOP, (document.querySelector('.site-header')?.offsetHeight ?? 0) + 8);
 const CLOSE_SVG = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8"/></svg>';
 const share = v => (v.share * 100).toFixed(1) + ' %';
 const list = names => names.length < 2 ? names.join('') : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
@@ -71,7 +73,7 @@ export function createCompare({ hero, snapshot, metrics, limits, onClose, disc, 
   const at = { x: 0, y: 0, manual: false };
   const clamp = (v, a, b) => Math.max(a, Math.min(v, Math.max(a, b)));
   function moveTo(x, y) {
-    at.x = clamp(x, EDGE, hero.clientWidth - EDGE - el.offsetWidth); at.y = clamp(y, Math.min(TOP, EDGE), hero.clientHeight - EDGE - el.offsetHeight);
+    at.x = clamp(x, EDGE, hero.clientWidth - EDGE - el.offsetWidth); at.y = clamp(y, Math.min(headTop(), EDGE), hero.clientHeight - EDGE - el.offsetHeight);
     el.style.transform = 'translate(' + Math.round(at.x) + 'px,' + Math.round(at.y) + 'px)';
   }
   let grab = null;
@@ -142,7 +144,7 @@ export function createCompare({ hero, snapshot, metrics, limits, onClose, disc, 
    * edge, the right edge, flush with the Moon on its left, flush on its right. Kept until the room changes, so the
    * table does not wander while other panels move.
    */
-  let homeKey = '', homeAt = { x: LEFT, y: TOP };
+  let homeKey = '', homeAt = { x: LEFT, y: headTop() };
   function home() {
     const w = el.offsetWidth, h = el.offsetHeight, W = hero.clientWidth, d = disc?.(), l = leftEdge(), r = Math.max(l, W - EDGE - w);
     const k = [w, Math.round(h / 40), W, hero.clientHeight, l, d && Math.round(d.x), d && Math.round(d.r)].join();
@@ -152,7 +154,7 @@ export function createCompare({ hero, snapshot, metrics, limits, onClose, disc, 
     const keep = (avoid?.() ?? []).filter(Boolean).map(b => ({ b, k: 2 }));
     if (d && d.r > 0) keep.push({ b: { x: d.x - d.r, y: d.y - d.r, w: 2 * d.r, h: 2 * d.r }, k: 1 });
     let least = Infinity;
-    xs.forEach((x, n) => { const cost = keep.reduce((sum, o) => sum + over({ x, y: TOP, w, h }, o.b) * o.k, 0) + n; if (cost < least) { least = cost; homeAt = { x, y: TOP }; } });
+    xs.forEach((x, n) => { const cost = keep.reduce((sum, o) => sum + over({ x, y: headTop(), w, h }, o.b) * o.k, 0) + n; if (cost < least) { least = cost; homeAt = { x, y: headTop() }; } });
     return homeAt;
   }
   /** Call once per frame after cards.update(). */

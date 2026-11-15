@@ -33,6 +33,8 @@ const HOUR = HOUR_MS, SEARCH_MS = 19 * 365.25 * DAY_MS, REFRESH_MS = 200;
 const MAX_SAMPLES = 9000;                                        // span metrics: hourly up to a year, coarser steps beyond
 const LINE_CLEAR = 5, LINE_PAST = 14;                            // px; a line keeps this far from other cards, and turns this far past them
 const GAP = 48, BETWEEN = 12, EDGE = 16, TOP = 93, LEFT = 72;   // px; TOP clears the header, LEFT the Parameters tab
+// The header is 85 px high, 119 px in windows from 1280 px (landing-search.css): cards and table start below whichever it is.
+const headTop = () => Math.max(TOP, (document.querySelector('.site-header')?.offsetHeight ?? 0) + 8);
 const CLOSE_SVG = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8"/></svg>';
 const body = (word, id) => '<dl><dt>Sub-' + (id === 'sun' ? 'solar' : 'Earth') + ' point</dt><dd data-f="' + id + 'Sub"></dd><dt>' + (id === 'sun' ? 'Solar' : 'Earth') + ' elevation</dt><dd data-f="' + id + 'El"></dd>'
   + '<dt>' + word + '\u2019s disk in view</dt><dd data-f="' + id + 'Frac"></dd><dt data-f="' + id + 'Lab"></dt><dd data-f="' + id + 'In"></dd></dl>';
@@ -69,12 +71,12 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
   const cards = new Map();                       // site id -> card
   let lastFill = 0;
   const still = matchMedia('(prefers-reduced-motion: reduce)');
-  let docked = null, dockTop = TOP;                // see dock() below
+  let docked = null, dockTop = headTop();                // see dock() below
   let tabled = false;                              // see table() below
   pins.onOpen = s => cards.has(s.id) ? close(s.id) : open(s);
   pins.onClose = id => close(id);
 
-  function bounds() { return { l: LEFT, t: TOP, r: hero.clientWidth - EDGE, b: hero.clientHeight - EDGE }; }
+  function bounds() { return { l: LEFT, t: headTop(), r: hero.clientWidth - EDGE, b: hero.clientHeight - EDGE }; }
   function moveTo(c, x, y) {
     const B = bounds();
     c.x = clamp(x, Math.min(B.l, EDGE), B.r - c.w); c.y = clamp(y, B.t, B.b - c.h);
@@ -288,7 +290,7 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
 
   // Docked: in the terrain view there is no Moon to stand beside. Only the card of that site is shown, top left,
   // without a line; the others wait until the view is left.
-  function dock(id, top = TOP) {
+  function dock(id, top = headTop()) {
     docked = id; dockTop = top;
     for (const c of cards.values()) { c.el.hidden = true; c.line.style.display = 'none'; c.docked = false; }   // every card finds its place again
   }

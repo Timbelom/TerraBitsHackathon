@@ -57,3 +57,8 @@
 @media(prefers-reduced-motion:reduce){.card,.card-ground.changed{animation:none}.card-close,.card-name,.card-terrain{transition:none}}
 /* In the terrain view the card stands under the bar that names the place; it may then be shorter than its content */
 body.terrain .card{max-height:calc(100% - 260px)}
+/* Window size. From 1280 px of width the header is 119 px high instead of 85 (landing-search.css), so the room for a card is 34 px less.
+   In a short window the card is set tighter, so it fits between the header and the time bar; what still does not fit scrolls. */
+@media(min-width:1280px){.card{max-height:calc(100% - 309px)}body.terrain .card{max-height:calc(100% - 294px)}}
+@media(max-height:820px){.card{padding:var(--s2) var(--s3) var(--s3);font-size:13px;line-height:1.4}.card dl{line-height:1.36;margin-top:var(--s1)}.card-name{height:28px;font-size:15px}.card-span,.card-delay{margin-top:var(--s1)}.card-ground,.card-delay-text{line-height:16px}.card-terrain{height:32px;margin-top:var(--s2);font-size:13px}}
+@media(max-height:700px){.card{font-size:12px}.card dl{line-height:1.3}.card-day{height:14px}.card-terrain{height:28px}}
