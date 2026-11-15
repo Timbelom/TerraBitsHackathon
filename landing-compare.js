@@ -55,7 +55,7 @@ const ROWS = [
   '',
   ['Sub-Earth point', 'earthSub'], ['Earth elevation above horizon', 'earthEl'], ['Earth’s disk in view', 'earthFrac'], ['Next Earthrise or Earthset', 'earth', 'earthIn'],
   'span',
-  ['Illuminated', 'sunShare'], ['Longest darkness', 'sunGap'], ['DTE available', 'earthShare'], ['Longest DTE outage', 'earthGap'],
+  ['Illuminated', 'sunShare'], ['Longest eclipse', 'sunGap'], ['DTE available', 'earthShare'], ['Longest DTE outage', 'earthGap'],
 ];
 
 /**

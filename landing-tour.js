@@ -68,7 +68,7 @@ const REFERENCE = [
     ['Name on a card', 'Type to rename a site. Named sites are kept for this browser session and appear in the search.'],
   ]],
   ['Parameters', [
-    ['Max. darkness, Max. DTE outage', '0 to 96 h; the right end is Off. Team assumptions, not lander specifications.'],
+    ['Max. eclipse, Max. DTE outage', '0 to 96 h; the right end is Off. Team assumptions, not lander specifications.'],
     ['Surface', 'Shaded relief, imagery (LROC WAC), elevation (LOLA), mean illumination and DTE availability. On the globe the last two are 2027 means; in the terrain view they cover your span.'],
     ['Layers', 'Sun and Earth paths, listed landing sites, latitude and longitude grid, elevation contours, 200 km squares.'],
     ['Edge of the sidebar', 'Drag it, or use the arrow keys on it, to change the width.'],
@@ -218,8 +218,8 @@ export function createTour({ api, hero, onClose }) {
       async auto() { const b = q('.tb-step[data-step="1"]'); for (let i = 0; i < 3; i++) { b.click(); if (!await wait(450)) return; } } },
 
     { ch: 1, q: 'How long can the lander go without sunlight?', spot: () => [field('p-dark').closest('.prange'), field('p-area-note')],
-      text: '<b>Max. darkness</b> is the longest unbroken time with less than half of the Sun’s disk in view that your lander tolerates. Set it, and the Moon keeps only the area that stays within it over your span.',
-      act: 'Set Max. darkness, for example to 6 h.',
+      text: '<b>Max. eclipse</b> is the longest unbroken time with less than half of the Sun’s disk in view that your lander tolerates. Set it, and the Moon keeps only the area that stays within it over your span.',
+      act: 'Set Max. eclipse, for example to 6 h.',
       enter: () => setSide(true),
       done: () => limit('p-dark') != null,
       seen: areaLine,

@@ -1,4 +1,4 @@
-// The two limits of the sidebar as an area on the Moon. "Max. darkness" and "Max. DTE outage" are off at the start.
+// The two limits of the sidebar as an area on the Moon. "Max. eclipse" and "Max. DTE outage" are off at the start.
 // As soon as one is set, the part of the Moon that keeps within it over the time window is marked on the globe
 // (view/moon-globe.js setArea); with both set, the part that keeps within both (the intersection).
 // Time window: Start to Stop of the time bar, or, with no span set, the 24 hours from the simulated time (to the

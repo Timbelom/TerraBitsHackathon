@@ -499,7 +499,7 @@ export function createDemo(api) {
     { ch: 2, label: 'New landing day', t: SLIP, cam: { ...BOTH, zoom: -.2 }, side: true, spot: ['p-dark', 'p-dte'],
       head: 'Two mission limits.', text: 'At most 6 hours without sunlight, at most 12 hours without a DTE link. The two sliders on the left set them. The arrows point to the Sun and to Earth.' },
     { ch: 2, label: 'The 24 hours from', t: SLIP, cam: { ...BOTH, zoom: -.2 }, side: true,
-      head: 'Limit 1: darkness.', text: f => f.sSun == null ? 'Watch the slider “Max. darkness”, then the Moon.' : 'Green: never dark for more than 6 hours in these 24 hours. That is <b>' + share(f.sSun) + '</b> of the Moon, the hemisphere facing the Sun.',
+      head: 'Limit 1: darkness.', text: f => f.sSun == null ? 'Watch the slider “Max. eclipse”, then the Moon.' : 'Green: never dark for more than 6 hours in these 24 hours. That is <b>' + share(f.sSun) + '</b> of the Moon, the hemisphere facing the Sun.',
       async play(h) {
         facts.sSun = null; h.text();
         if (await h.slide('p-dark', LIMITS.dark)) { const v = await mark(h, { dark: LIMITS.dark, dte: OFF }); if (v != null) { facts.sSun = v; h.pulse(); h.text(); } }

@@ -1,6 +1,6 @@
 // The area of the Moon that keeps within the two limits of the sidebar: for every cell of a global grid, the
 // longest stretch of a time window without the Sun (darkness) and without the Earth (no direct-to-Earth link).
-// The page marks the cells where both stay within "Max. darkness" and "Max. DTE outage".
+// The page marks the cells where both stay within "Max. eclipse" and "Max. DTE outage".
 // No page, no three.js: runs in the browser (in a worker, core/area-worker.js) and in Node (tests/).
 //
 // Same definitions as core/visibility.js, which the info cards use for single points:

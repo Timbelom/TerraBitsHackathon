@@ -899,7 +899,7 @@ function systemReadout(e) {
     }
     const lim = area.at(lat, lon);                      // the cell's numbers behind the marked area
     if (lim) { const h = v => v === Infinity ? '&gt; ' + LIMIT_MAX_H + ' h' : v.toFixed(1) + ' h';
-      lines.push([lim.sun != null && 'Longest darkness ' + h(lim.sun), lim.earth != null && 'Longest DTE outage ' + h(lim.earth)].filter(Boolean).join(', ') + ' <span>(' + (lim.free ? 'next 24 h' : 'time span') + ', 0.5° cell)</span>'); }
+      lines.push([lim.sun != null && 'Longest eclipse ' + h(lim.sun), lim.earth != null && 'Longest DTE outage ' + h(lim.earth)].filter(Boolean).join(', ') + ' <span>(' + (lim.free ? 'next 24 h' : 'time span') + ', 0.5° cell)</span>'); }
     if (layerOn.squares) { const i = globe.squareAt(lat, lon); globe.markSquare(i); lines.push(i >= 0 ? 'Square ' + globe.squares[i].label : 'Outside the 200 km squares'); }
   }
   showReadout(e, lines);

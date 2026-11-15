@@ -42,7 +42,7 @@ const CLOSE_SVG = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" st
 const body = (word, id) => '<dl><dt>Sub-' + (id === 'sun' ? 'solar' : 'Earth') + ' point</dt><dd data-f="' + id + 'Sub"></dd><dt>' + (id === 'sun' ? 'Solar' : 'Earth') + ' elevation</dt><dd data-f="' + id + 'El"></dd>'
   + '<dt>' + word + '\u2019s disk in view</dt><dd data-f="' + id + 'Frac"></dd><dt data-f="' + id + 'Lab"></dt><dd data-f="' + id + 'In"></dd></dl>';
 const ROWS = body('Sun', 'sun') + body('Earth', 'earth')
-  + '<p class="card-span" data-f="span"></p><dl class="card-limits"><dt>Illuminated</dt><dd data-f="sunShare"></dd><dt>Longest darkness</dt><dd data-f="sunGap"></dd>'
+  + '<p class="card-span" data-f="span"></p><dl class="card-limits"><dt>Illuminated</dt><dd data-f="sunShare"></dd><dt>Longest eclipse</dt><dd data-f="sunGap"></dd>'
   + '<dt>DTE available</dt><dd data-f="earthShare"></dd><dt>Longest DTE outage</dt><dd data-f="earthGap"></dd></dl>';
 const clamp = (v, a, b) => Math.max(a, Math.min(v, Math.max(a, b)));
 const point = p => Math.abs(p[0]).toFixed(1) + '° ' + (p[0] < 0 ? 'S' : 'N') + ', ' + p[1].toFixed(1) + '° E';
@@ -285,7 +285,7 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
       + (t.stepMs > HOUR ? ' Sampled every ' + t.stepMs / HOUR + ' h.' : '');
     if (!v) return;
     c.days.forEach((b, k) => {
-      const say = '+' + k + ' d, landing ' + stamp(t.landingMs + k * DAY_MS) + ' UTC: longest darkness ' + hours(t.dark[k], t.darkOpen[k]) + ', longest DTE outage ' + hours(t.outage[k], t.outageOpen[k])
+      const say = '+' + k + ' d, landing ' + stamp(t.landingMs + k * DAY_MS) + ' UTC: longest eclipse ' + hours(t.dark[k], t.darkOpen[k]) + ', longest DTE outage ' + hours(t.outage[k], t.outageOpen[k])
         + (v.ok[k] ? ', within the limits' : ', exceeds a limit');
       b.classList.toggle('bad', !v.ok[k]); b.title = say; b.setAttribute('aria-label', say);
     });
