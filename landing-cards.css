@@ -21,6 +21,10 @@
 .card-close:hover{background:var(--surface-hover)}
 .card-close:focus-visible{outline:2px solid var(--accent);outline-offset:0}
 .card-sub{margin:0;font-variant-numeric:tabular-nums}
+/* What the numbers rest on. Marked for a moment when better ground has arrived and the numbers were redone. */
+.card-ground{margin:0 calc(-1 * var(--s1));padding:0 var(--s1);border-radius:var(--r-inner);font-size:14px;line-height:20px;font-variant-numeric:tabular-nums}
+.card-ground.changed{animation:card-ground calc(var(--t-panel) * 4) var(--ease)}
+@keyframes card-ground{from{background:var(--accent);color:var(--accent-ink)}}
 .card dl{display:grid;grid-template-columns:auto 1fr;column-gap:var(--s4);margin:var(--s3) 0 0;line-height:1.6}
 /* Third group: the time span of the sidebar. Its heading is the span itself; a value over its limit is a warning. */
 .card-span{margin:var(--s3) 0 0;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -33,6 +37,6 @@
 .card-terrain:hover{opacity:.86}
 .card-terrain:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 @keyframes card-in{from{opacity:0}}
-@media(prefers-reduced-motion:reduce){.card{animation:none}.card-close,.card-name,.card-terrain{transition:none}}
+@media(prefers-reduced-motion:reduce){.card,.card-ground.changed{animation:none}.card-close,.card-name,.card-terrain{transition:none}}
 /* In the terrain view the card stands under the bar that names the place; it may then be shorter than its content */
 body.terrain .card{max-height:calc(100% - 260px)}

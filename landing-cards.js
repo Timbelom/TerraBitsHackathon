@@ -18,7 +18,7 @@
 // While a site is behind the limb its marker, line and card are hidden; the card comes back with the site
 // (a card that was not moved by hand then looks for its place again).
 import { siteSky, DAY_MS } from './core/sky.js';
-import { siteState, nextChange, spanMetrics, IN_VIEW, HOUR_MS } from './core/visibility.js';
+import { siteState, nextChange, spanMetrics, basisLabel, IN_VIEW, HOUR_MS } from './core/visibility.js';
 import { coordText } from './landing-pins.js';
 
 // Rise and set (the disc passing 50 %) are searched hourly for 60 days, then in 6 h steps up to 19 years (one
@@ -38,6 +38,11 @@ const point = p => Math.abs(p[0]).toFixed(1) + '° ' + (p[0] < 0 ? 'S' : 'N') + 
 const angle = d => (d < 0 ? '−' : '+') + Math.abs(d).toFixed(1) + '°';
 const span = ms => { const h = Math.floor(ms / HOUR); return Math.floor(h / 24) + ' d ' + h % 24 + ' h'; };
 const day = ms => new Date(ms).toISOString().slice(0, 10);
+// The ground line of a card: what the horizon of the point rests on, in a few words (the full name is its title).
+// The global grid and the smooth sphere are coarse: they miss the nearby relief that decides rise and set.
+const GROUND = { profile: '5 m site profile', block: 'LDEM64', globe: 'global grid, 7.6 km', smooth: 'smooth sphere' };
+const isCoarse = basis => basis === 'globe' || basis === 'smooth';
+const groundName = g => g.basis === 'block' && Math.abs((g.horizon?.pixelM ?? 473.8) - 473.8) > 5 ? basisLabel('block', g.horizon.pixelM) : GROUND[g.basis];
 
 /** hero: the hero element (cards live in it); pins: createPins api; now(): simulated UTC ms; disc(): Moon on screen {x, y, r} in hero px;
  *  avoid(): rectangles {x, y, w, h} in hero px the cards keep clear of (time series panel, time bar, legend), nulls allowed;
@@ -140,7 +145,7 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
 
   function open(s) {
     const el = document.createElement('section'); el.className = 'card'; el.tabIndex = 0;
-    el.innerHTML = '<header><input type="text" class="card-name" aria-label="Name of this point" autocomplete="off" spellcheck="false"><button type="button" class="card-close" aria-label="Close">' + CLOSE_SVG + '</button></header><p class="card-sub"></p>' + ROWS + '<button type="button" class="card-terrain">View terrain</button>';
+    el.innerHTML = '<header><input type="text" class="card-name" aria-label="Name of this point" autocomplete="off" spellcheck="false"><button type="button" class="card-close" aria-label="Close">' + CLOSE_SVG + '</button></header><p class="card-sub"></p><p class="card-ground" data-f="ground"></p>' + ROWS + '<button type="button" class="card-terrain">View terrain</button>';
     el.querySelector('.card-terrain').addEventListener('click', () => onTerrain?.(s));
     const nameEl = el.querySelector('.card-name'), sub = el.querySelector('.card-sub'), base = s.base ??= s.name;
     const label = () => {
@@ -193,6 +198,13 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
     const gv = groundVersion();
     if (c.gv !== gv) { c.gv = gv; c.next = {}; c.mKey = ''; }                 // the ground changed: rise, set and span numbers are redone
     set(c, 'sunSub', point(sub.subSolar)); set(c, 'earthSub', point(sub.subEarth));
+    // what the numbers rest on; when better ground has arrived the line is marked for a moment
+    const groundKey = g.basis + '|' + (g.horizon?.pixelM ?? '');
+    set(c, 'ground', 'Ground: ' + groundName(g) + (isCoarse(g.basis) ? ' (coarse)' : '') + (g.loading ? ', loading finer ground' : ''));
+    if (c.groundKey !== groundKey) {
+      if (c.groundKey != null) { c.f.ground.classList.remove('changed'); void c.f.ground.offsetWidth; c.f.ground.classList.add('changed'); }
+      c.groundKey = groundKey; c.f.ground.title = basisLabel(g.basis, g.horizon?.pixelM);
+    }
     for (const [id, word] of [['sun', 'Sun'], ['earth', 'Earth']]) {
       const b = k[id], up = b.frac >= IN_VIEW;
       const above = b.el - b.horizon;                                  // disc centre above the skyline in that direction, as in the plot
