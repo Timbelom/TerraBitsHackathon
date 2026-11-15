@@ -15,7 +15,7 @@
 // While a site is behind the limb its marker, line and card are hidden; the card comes back with the site
 // (a card that was not moved by hand then looks for its place again).
 import { siteSky, DAY_MS, SOURCE_LABEL } from './core/sky.js';
-import { siteState, nextChange, spanMetrics, IN_VIEW, BASIS_LABEL, HOUR_MS } from './core/visibility.js';
+import { siteState, nextChange, spanMetrics, IN_VIEW, basisLabel, HOUR_MS } from './core/visibility.js';
 import { coordText } from './landing-pins.js';
 
 // Rise and set (the disc passing 50 %) are searched hourly for 60 days, then in 6 h steps up to 19 years (one
@@ -163,7 +163,7 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
       set(c, id + 'Gap', (v.longestGapOpen ? '≥ ' : '') + gap + ' h · limit ' + limit + ' h');
       if (c.over[id] !== over) { c.over[id] = over; c.f[id + 'Gap'].classList.toggle('over', over); c.f[id + 'Gap'].title = over ? 'Longer than the limit set in the sidebar' : ''; }
     }
-    set(c, 'basis', 'Sky: ' + (m.source === 'mixed' ? 'JPL Horizons and analytic model' : SOURCE_LABEL[m.source]) + '. Ground: ' + BASIS_LABEL[g.basis]
+    set(c, 'basis', 'Sky: ' + (m.source === 'mixed' ? 'JPL Horizons and analytic model' : SOURCE_LABEL[m.source]) + '. Ground: ' + basisLabel(g.basis, g.horizon && g.horizon.pixelM)
       + (g.loading ? ', loading terrain …' : g.error ? ' (terrain not loaded: ' + g.error + ')' : '') + '.' + (m.stepH > 1 ? ' Sampled every ' + m.stepH + ' h.' : ''));
   }
 

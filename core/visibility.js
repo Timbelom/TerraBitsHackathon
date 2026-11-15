@@ -222,4 +222,9 @@ export const BASIS_LABEL = {
   globe: 'LOLA global grid, 7.6 km cells',
   smooth: 'smooth sphere, no terrain',
 };
+/** The label for a horizon; a block cut from a raster other than LDEM64 names its own pixel size. */
+export function basisLabel(basis, pixelM) {
+  if (basis === 'block' && pixelM > 0 && Math.abs(pixelM - 473.8) > 5) return 'elevation raster, ' + Math.round(pixelM) + ' m pixels';
+  return BASIS_LABEL[basis];
+}
 export const basisOf = horizon => horizon ? horizon.basis : 'smooth';

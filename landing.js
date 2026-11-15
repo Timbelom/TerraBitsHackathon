@@ -15,7 +15,7 @@ import { createSiteData } from './ui/site-data.js';
 import { createMoonGlobe } from './view/moon-globe.js';
 import { createTerrainView } from './view/terrain-view.js';
 import { VIRIDIS, INFERNO, CIVIDIS, cssGradient } from './view/colors.js';
-import { siteState, makeSite, skylineFromGlobe, discFraction, SUN_RADIUS_DEG, BASIS_LABEL } from './core/visibility.js';
+import { siteState, makeSite, skylineFromGlobe, discFraction, SUN_RADIUS_DEG, basisLabel } from './core/visibility.js';
 import { RAD, basisAt, bodyToThree, coordLabel } from './core/frames.js';
 
 const world = document.getElementById('world');
@@ -756,7 +756,7 @@ function enterTerrain(site, block) {
   const g = siteData.get(site);
   tMeta.textContent = block.visibleKm + ' \u00d7 ' + block.visibleKm + ' km around ' + coordLabel(site.lat, site.lon, 3) + ', true height scale. '
     + (block.coarse ? 'Coarse ground from the global grid, 7.6 km cells' + (g.error ? ' (' + g.error + ')' : siteData.availability(site) ? '' : '; full resolution needs the local server, start.bat') + '.'
-      : 'Ground: ' + BASIS_LABEL.block + '.');
+      : 'Ground: ' + basisLabel('block', block.sourceCellM) + '.');
   if (!cards.has(site.id)) pins.onOpen?.(site);
   cards.dock(site.id, tBar.offsetTop + tBar.offsetHeight + 12);
   applySurface(); layout();
