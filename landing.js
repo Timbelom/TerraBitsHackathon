@@ -88,8 +88,8 @@ const SUN_DIST = 2400, SUN_R = SUN_DIST * (SUN_RADIUS_KM / AU_KM) * EXAG;
 const sunLight = new THREE.DirectionalLight(0xfff6e8, 4.4);
 pivot.add(sunLight);                                   // target stays at the Moon (origin)
 scene.add(new THREE.AmbientLight(0x8fa6c8, 0.05));    // faint fill so the night side is not black
-// Start view only: a very weak, flat cool light, so the night side is not a
-// pure black disc behind the title. The Sun does all the visible shading and shadows.
+// A very weak, flat cool light in both views, so the night side is not a pure black disc: its craters
+// stay readable, and it still reads as the night side. The Sun does all the visible shading and shadows.
 const FILL = .2;
 const fill = new THREE.AmbientLight(0xbfd2ee, FILL);
 scene.add(fill);
@@ -313,6 +313,28 @@ function setPlaying(on) { playing = on; onClock?.(); }
 // Geometry between the bodies is unchanged; only the frame the scene is shown in is Moon-fixed.
 const HOLD = inertialSky(startMs).moonToScene, held = new THREE.Quaternion(), tmpVec = new THREE.Vector3();
 const turned = v => tmpVec.set(...v).applyQuaternion(held);
+/** Azimuths (rad, about the scene's vertical axis, in the space that is dragged) of Sun and Earth at a UTC time, Moon held still. */
+function azimuths(ms) {
+  const d = inertialSky(ms), m = d.moonToScene;
+  const T = HOLD.map(r => [0, 1, 2].map(k => r[0] * m[k][0] + r[1] * m[k][1] + r[2] * m[k][2]));
+  const at = v => Math.atan2(T[0][0] * v[0] + T[0][1] * v[1] + T[0][2] * v[2], T[2][0] * v[0] + T[2][1] * v[1] + T[2][2] * v[2]);
+  return { sun: at(d.sun), earth: at(d.earth) };
+}
+// Opening view of the system: the Sun 90 degrees to the right (terminator in the middle of the disc) and the
+// Earth EARTH_OPEN further round, so it stands in the distance to the right of the Moon. That needs the right
+// phase, so the clock runs forward to the next moment the Earth stands EARTH_OPEN from the Sun.
+const EARTH_OPEN = rad(70);
+/** The next UTC time (ms) from `from` on, before `end`, at which the Earth stands EARTH_OPEN round from the Sun; null if none. */
+function openingTime(from, end) {
+  const off = t => { const a = azimuths(t), x = a.earth - a.sun - EARTH_OPEN; return Math.atan2(Math.sin(x), Math.cos(x)); };
+  const STEP = 3600000;
+  for (let a = from, fa = off(a); a < Math.min(end, from + 32 * DAY_MS); ) {
+    const b = a + STEP, fb = off(b);
+    if (Math.abs(fa) < 1 && Math.abs(fb) < 1 && fa * fb <= 0) return fa === fb ? a : a + STEP * fa / (fa - fb);
+    a = b; fa = fb;
+  }
+  return null;
+}
 function placeBodies() {
   const d = inertialSky(simMs), m = d.moonToScene;
   const T = HOLD.map(r => [0, 1, 2].map(k => r[0] * m[k][0] + r[1] * m[k][1] + r[2] * m[k][2]));   // HOLD x transpose(moonToScene)
@@ -437,16 +459,24 @@ hero.addEventListener('pointercancel', release);
 function expand() {
   if (expanded || busy) return; expanded = true;
   document.body.classList.add('expanded');
-  // Only the camera moves back; the space keeps its orientation.
-  if (reduce.matches) { applyMix(1); layout(); return; }
-  zoom = { t0: performance.now(), ms: 2200 };
+  // The camera moves back and, in the same move, goes round the Moon to the right until it looks at the
+  // terminator: night side on the left half of the disc, day side on the right (Sun 90 degrees to the right).
+  // Dragging during the move takes over and the turn stops.
+  // In the same move the clock runs forward (a short time-lapse) to the moment the Earth stands to the right
+  // of the Moon in that view; from there it goes on as usual. No such moment inside the time span: no time-lapse.
+  vy = vx = 0;
+  const to = openingTime(simMs, stopMs);
+  const y0 = pivot.rotation.y, want = Math.PI / 2 - azimuths(to ?? simMs).sun;
+  let dy = (want - y0) % (2 * Math.PI); if (dy > 0) dy -= 2 * Math.PI;        // camera to the right = space to the left
+  if (dy < -1.5 * Math.PI) dy += 2 * Math.PI;                                 // unless that is nearly a full turn
+  if (reduce.matches) { pivot.rotation.y = y0 + dy; if (to) setTime(to); applyMix(1); layout(); return; }
+  zoom = { t0: performance.now(), ms: to ? 3600 : 2600, y0, dy, from: simMs, to };
 }
 function applyMix(m) {
   mix = m;
   restDistance = closeDistance + (systemDistance - closeDistance) * m;
   camera.position.z = restDistance;
   orbits.children.forEach(l => { l.material.opacity = l.userData.opacity * m; });
-  fill.intensity = FILL * (1 - m);
   placeBodies();
 }
 applyMix(0); layout();
@@ -494,7 +524,7 @@ function frame(now) {
     pivot.rotation.y += vy; pivot.rotation.x = THREE.MathUtils.clamp(pivot.rotation.x + vx, -1.1, 1.1);
     vy *= .94; vx *= .94;
   }
-  if (playing) {
+  if (playing && !zoom?.to) {
     simMs += dt * 1000 * TIME_SCALE * speed;              // the one clock for every motion
     if (simMs >= stopMs) setTime(loopMs); else { placeBodies(); onClock?.(); }
   }
@@ -504,7 +534,9 @@ function frame(now) {
   if (zoom && !flight) {
     const p = Math.min((now - zoom.t0) / zoom.ms, 1);
     const e = p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+    if (zoom.to) { simMs = zoom.from + (zoom.to - zoom.from) * e; onClock?.(); if (p === 1) setTime(zoom.to); }
     applyMix(e);
+    if (drag) zoom.dy = 0; else if (zoom.dy) pivot.rotation.y = zoom.y0 + zoom.dy * e;
     if (p === 1) { zoom = null; layout(); }
   }
   if (flight) {
