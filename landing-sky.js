@@ -62,13 +62,13 @@ export function skyPaths(site, a, b) {
  */
 export function createSky({ hero, marked, picked, now, window: timeWindow, onClose, ground, groundVersion, other, closeOther }) {
   const el = document.createElement('section'); el.className = 'series sky'; el.hidden = true; el.tabIndex = 0;
-  el.setAttribute('aria-label', 'Sky of a marked point: horizon, Sun and Earth by azimuth and elevation');
+  el.setAttribute('aria-label', 'Sky of a marked site: terrain horizon, Sun and Earth by azimuth and elevation');
   el.innerHTML = '<header><h2>Sky view</h2><output class="series-time"></output><button type="button" class="series-close" aria-label="Close">' + CLOSE_SVG + '</button></header>'
-    + '<p class="series-empty">Mark a point on the Moon to see its sky.</p>'
-    + '<p class="sky-site"><strong></strong><select aria-label="Marked point shown" hidden></select><span></span></p><svg class="sky-plot" role="img"></svg>'
+    + '<p class="series-empty">Mark a site on the Moon to see its sky.</p>'
+    + '<p class="sky-site"><strong></strong><select aria-label="Marked site shown" hidden></select><span></span></p><svg class="sky-plot" role="img"></svg>'
     + '<table class="sky-values"><thead><tr><th></th><th scope="col">Azimuth</th><th scope="col">Elevation</th><th scope="col">Above horizon</th></tr></thead><tbody>'
     + BODIES.map(b => '<tr><th scope="row"><i style="background:' + b.color + '"></i>' + b.name + '</th><td></td><td></td><td></td></tr>').join('') + '</tbody></table>'
-    + '<p class="sky-note" hidden>Discs drawn larger than to scale (3 px radius).</p>';
+    + '<p class="sky-note" hidden>Disks drawn larger than true scale (3 px radius).</p>';
   hero.append(el);
   const timeEl = el.querySelector('.series-time'), plot = el.querySelector('.sky-plot'), nameEl = el.querySelector('.sky-site strong'), select = el.querySelector('select'),
     basisEl = el.querySelector('.sky-site span'), note = el.querySelector('.sky-note'), cells = [...el.querySelectorAll('tbody tr')].map(tr => [...tr.querySelectorAll('td')]);
@@ -154,9 +154,9 @@ export function createSky({ hero, marked, picked, now, window: timeWindow, onClo
     inBox.append(sky2); kids.push(inBox);
     kids.push(svgEl('path', { class: 'series-axis', d: 'M' + l + ' ' + t + 'V' + b + 'H' + r }), ...marks.map(m => m.label));
     plot.replaceChildren(...kids);
-    plot.setAttribute('aria-label', 'Sky of ' + site.name + ': horizon silhouette over azimuth 0 to 360 degrees from north through east, elevation from '
-      + data.lo.toFixed(1) + ' to ' + data.hi.toFixed(1) + ' degrees, with the Sun and the Earth and their courses from ' + stamp(data.a) + ' to ' + stamp(data.b)
-      + '. Dashed where a body is below the skyline.');
+    plot.setAttribute('aria-label', 'Sky of ' + site.name + ': terrain horizon over azimuth 0 to 360 degrees from north through east, elevation from '
+      + data.lo.toFixed(1) + ' to ' + data.hi.toFixed(1) + ' degrees, with the Sun and Earth and their paths from ' + stamp(data.a) + ' to ' + stamp(data.b)
+      + '. Dashed where a body is below the terrain horizon.');
   }
   const st = { sun: {}, earth: {} };
   /** The two discs at a time; the values beside them at most five times a second. */
@@ -220,7 +220,7 @@ export function createSky({ hero, marked, picked, now, window: timeWindow, onClo
       dataKey = dk; drawKey = '';
       const g = ground(site); calc = g.site;
       data = skyPaths(calc, w.a, w.b); data.a = w.a; data.b = w.b;
-      basisEl.textContent = 'Horizon: ' + basisLabel(g.basis, g.horizon?.pixelM) + (g.loading ? ' (loading better ground)' : '');
+      basisEl.textContent = 'Terrain data: ' + basisLabel(g.basis, g.horizon?.pixelM) + (g.loading ? ' (loading higher resolution)' : '');
     }
     const k = dataKey + '|' + plot.clientWidth + 'x' + plot.clientHeight + '|' + site.name;
     if (k !== drawKey) { drawKey = k; draw(site); lastRead = 0; }

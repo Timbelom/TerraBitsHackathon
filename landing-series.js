@@ -66,9 +66,9 @@ export function ticks(lo, hi, steps, most) {
  */
 export function createSeries({ hero, marked, now, window: timeWindow, setTime, onClose, ground, groundVersion }) {
   const el = document.createElement('section'); el.className = 'series'; el.hidden = true; el.tabIndex = 0;
-  el.setAttribute('aria-label', 'Solar elevation above the horizon over time for the marked points');
+  el.setAttribute('aria-label', 'Solar elevation above the horizon over time for the marked sites');
   el.innerHTML = '<header><h2>Solar elevation above the horizon</h2><output class="series-time"></output><button type="button" class="series-close" aria-label="Close">' + CLOSE_SVG + '</button></header>'
-    + '<p class="series-empty">Mark a point on the Moon to plot its solar elevation.</p><svg class="series-plot" role="img"></svg><ul class="series-legend"></ul>';
+    + '<p class="series-empty">Mark a site on the Moon to plot its solar elevation.</p><svg class="series-plot" role="img"></svg><ul class="series-legend"></ul>';
   hero.append(el);
   const timeEl = el.querySelector('.series-time'), plot = el.querySelector('.series-plot'), legend = el.querySelector('ul');
   el.querySelector('.series-close').addEventListener('click', () => onClose?.());
@@ -175,13 +175,13 @@ export function createSeries({ hero, marked, now, window: timeWindow, setTime, o
     kids.push(hoverLine, nowLine);
     for (const s of sites) { s.dot = svgEl('circle', { class: 'series-dot', r: 5, fill: COLORS[slots.get(s.id)] }); kids.push(s.dot); }
     plot.replaceChildren(...kids);
-    plot.setAttribute('aria-label', 'Line chart, solar elevation above the local horizon in degrees, with bands marking the hours of sunlight, from ' + stamp(win.a) + ' to ' + stamp(win.b) + ': ' + sites.map(s => s.name).join(', '));
+    plot.setAttribute('aria-label', 'Line chart, solar elevation above the terrain horizon in degrees, with bands marking the illuminated hours, from ' + stamp(win.a) + ' to ' + stamp(win.b) + ': ' + sites.map(s => s.name).join(', '));
     legend.replaceChildren(...sites.map(s => {
       const li = document.createElement('li'); li.innerHTML = '<i></i><span></span><b></b>';
       li.firstChild.style.background = COLORS[slots.get(s.id)]; li.children[1].textContent = s.name; s.valueEl = li.lastChild;
       return li;
     }));
-    if (left) { const li = document.createElement('li'); li.className = 'series-more'; li.textContent = left + ' more marked point' + (left > 1 ? 's' : '') + ' not drawn'; legend.append(li); }
+    if (left) { const li = document.createElement('li'); li.className = 'series-more'; li.textContent = left + ' more marked site' + (left > 1 ? 's' : '') + ' not drawn'; legend.append(li); }
     readKey = '';
   }
   const readState = { sun: {}, earth: {} };

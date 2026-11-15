@@ -34,11 +34,11 @@ const MAX_SAMPLES = 9000;                                        // span metrics
 const LINE_CLEAR = 5, LINE_PAST = 14;                            // px; a line keeps this far from other cards, and turns this far past them
 const GAP = 48, BETWEEN = 12, EDGE = 16, TOP = 93, LEFT = 72;   // px; TOP clears the header, LEFT the Parameters tab
 const CLOSE_SVG = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8"/></svg>';
-const body = (word, id) => '<dl><dt>Sub-' + (id === 'sun' ? 'solar' : 'Earth') + ' point</dt><dd data-f="' + id + 'Sub"></dd><dt>' + (id === 'sun' ? 'Solar' : 'Earth') + ' elevation above horizon</dt><dd data-f="' + id + 'El"></dd>'
-  + '<dt>' + word + '\u2019s disc in view</dt><dd data-f="' + id + 'Frac"></dd><dt data-f="' + id + 'Lab"></dt><dd data-f="' + id + 'In"></dd></dl>';
+const body = (word, id) => '<dl><dt>Sub-' + (id === 'sun' ? 'solar' : 'Earth') + ' point</dt><dd data-f="' + id + 'Sub"></dd><dt>' + (id === 'sun' ? 'Solar' : 'Earth') + ' elevation</dt><dd data-f="' + id + 'El"></dd>'
+  + '<dt>' + word + '\u2019s disk in view</dt><dd data-f="' + id + 'Frac"></dd><dt data-f="' + id + 'Lab"></dt><dd data-f="' + id + 'In"></dd></dl>';
 const ROWS = body('Sun', 'sun') + body('Earth', 'earth')
-  + '<p class="card-span" data-f="span"></p><dl class="card-limits"><dt>Sun in view</dt><dd data-f="sunShare"></dd><dt>Longest darkness</dt><dd data-f="sunGap"></dd>'
-  + '<dt>Earth in view</dt><dd data-f="earthShare"></dd><dt>Longest DTE outage</dt><dd data-f="earthGap"></dd></dl>';
+  + '<p class="card-span" data-f="span"></p><dl class="card-limits"><dt>Illuminated</dt><dd data-f="sunShare"></dd><dt>Longest darkness</dt><dd data-f="sunGap"></dd>'
+  + '<dt>DTE available</dt><dd data-f="earthShare"></dd><dt>Longest DTE outage</dt><dd data-f="earthGap"></dd></dl>';
 const clamp = (v, a, b) => Math.max(a, Math.min(v, Math.max(a, b)));
 const point = p => Math.abs(p[0]).toFixed(1) + '° ' + (p[0] < 0 ? 'S' : 'N') + ', ' + p[1].toFixed(1) + '° E';
 const angle = d => (d < 0 ? '−' : '+') + Math.abs(d).toFixed(1) + '°';
@@ -159,7 +159,7 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
 
   function open(s) {
     const el = document.createElement('section'); el.className = 'card'; el.tabIndex = 0;
-    el.innerHTML = '<header><input type="text" class="card-name" aria-label="Name of this point" autocomplete="off" spellcheck="false"><button type="button" class="card-close" aria-label="Close">' + CLOSE_SVG + '</button></header><p class="card-sub"></p><p class="card-ground" data-f="ground"></p>' + ROWS + DELAY + '<button type="button" class="card-terrain">View terrain</button>';
+    el.innerHTML = '<header><input type="text" class="card-name" aria-label="Name of this site" autocomplete="off" spellcheck="false"><button type="button" class="card-close" aria-label="Close">' + CLOSE_SVG + '</button></header><p class="card-sub"></p><p class="card-ground" data-f="ground"></p>' + ROWS + DELAY + '<button type="button" class="card-terrain">View terrain</button>';
     el.querySelector('.card-terrain').addEventListener('click', () => onTerrain?.(s));
     const nameEl = el.querySelector('.card-name'), sub = el.querySelector('.card-sub'), base = s.base ??= s.name;
     const label = () => {
@@ -220,7 +220,7 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
     set(c, 'sunSub', point(sub.subSolar)); set(c, 'earthSub', point(sub.subEarth));
     // what the numbers rest on; when better ground has arrived the line is marked for a moment
     const groundKey = g.basis + '|' + (g.horizon?.pixelM ?? '');
-    set(c, 'ground', 'Ground: ' + groundName(g) + (isCoarse(g.basis) ? ' (coarse)' : '') + (g.loading ? ', loading finer ground' : ''));
+    set(c, 'ground', 'Terrain data: ' + groundName(g) + (isCoarse(g.basis) ? ' (coarse)' : '') + (g.loading ? ', loading higher resolution' : ''));
     if (c.groundKey !== groundKey) {
       if (c.groundKey != null) { c.f.ground.classList.remove('changed'); void c.f.ground.offsetWidth; c.f.ground.classList.add('changed'); }
       c.groundKey = groundKey; c.f.ground.title = basisLabel(g.basis, g.horizon?.pixelM);
@@ -254,7 +254,7 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
       set(c, id + 'Share', (v.share * 100).toFixed(1) + ' % of ' + Math.round(v.hours) + ' h');
       set(c, id + 'Gap', (v.longestGapOpen ? '≥ ' : '') + (gap < 100 ? gap.toFixed(1) : Math.round(gap)) + ' h' + (limit != null ? ' · limit ' + limit + ' h' : ''));
       tone(c, id + 'Gap', limit == null ? '' : over ? 'bad' : 'good');
-      if (c.over[id] !== over) { c.over[id] = over; c.f[id + 'Gap'].title = over ? 'Longer than the limit set in the sidebar' : ''; }
+      if (c.over[id] !== over) { c.over[id] = over; c.f[id + 'Gap'].title = over ? 'Exceeds the limit set in the sidebar' : ''; }
     }
     // the delay row: the table once per landing, mission and ground (a new card at once, otherwise one card per frame, see update()); the limits only colour it
     c.dWant = w.a + '|' + (w.free ? DEFAULT_MISSION_MS : w.b - w.a);
@@ -274,14 +274,14 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
     c.delay.classList.toggle('coarse', coarse); c.delay.firstChild.hidden = !v;
     c.verdict = v;
     lead.textContent = v ? dur + ' mission: ' : '';
-    text.textContent = !v ? 'Set a limit in the sidebar to see how much delay this site tolerates.' : coarse ? 'coarse ground, open the terrain for a reliable answer' : delayText(v);
+    text.textContent = !v ? 'Set a limit in the sidebar to see how much delay this site tolerates.' : coarse ? 'coarse terrain data: open the terrain view for a reliable result' : delayText(v);
     text.className = !v || coarse || v.holds === 0 ? 'plain' : v.holds < 0 ? 'bad' : 'good';   // no slack at all is neither in the site's favour nor against it
-    c.delay.title = 'Landing ' + stamp(t.landingMs) + ' UTC, delayed by 0 to ' + (t.days - 1) + ' days; mission of ' + dur + '. A day holds when the limits set in the sidebar are kept over the whole mission.'
+    c.delay.title = 'Landing ' + stamp(t.landingMs) + ' UTC, delayed by 0 to ' + (t.days - 1) + ' days; mission of ' + dur + '. A day is feasible when the limits set in the sidebar are met over the whole mission.'
       + (t.stepMs > HOUR ? ' Sampled every ' + t.stepMs / HOUR + ' h.' : '');
     if (!v) return;
     c.days.forEach((b, k) => {
       const say = '+' + k + ' d, landing ' + stamp(t.landingMs + k * DAY_MS) + ' UTC: longest darkness ' + hours(t.dark[k], t.darkOpen[k]) + ', longest DTE outage ' + hours(t.outage[k], t.outageOpen[k])
-        + (v.ok[k] ? ', within the limits' : ', over a limit');
+        + (v.ok[k] ? ', within the limits' : ', exceeds a limit');
       b.classList.toggle('bad', !v.ok[k]); b.title = say; b.setAttribute('aria-label', say);
     });
   }

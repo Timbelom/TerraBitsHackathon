@@ -74,7 +74,7 @@ export function createArea({ window: limitWindow, limits, skyVersion, apply, not
         const pct = share * 100;
         grids.text = (pct > 0 && pct < .1 ? 'Under 0.1' : pct.toFixed(1)) + ' % of the Moon stays within ' + (needSun && needEarth ? 'both limits' : 'the limit')
           + (grids.free ? ' in the 24 h from ' + stamp(grids.a) : ' from ' + stamp(grids.a) + ' to ' + stamp(grids.b)) + ' UTC'
-          + (grids.stepH > 1 ? ', sampled every ' + grids.stepH + ' h' : '') + '. Marked on the Moon; ground: ' + BASIS_LABEL[grids.basis] + '.';
+          + (grids.stepH > 1 ? ', sampled every ' + grids.stepH + ' h' : '') + '. Marked on the Moon; terrain data: ' + BASIS_LABEL[grids.basis] + '.';
       }
     }
     // while a long calculation runs the line says so; a short one (the window moving with the clock) just replaces the area

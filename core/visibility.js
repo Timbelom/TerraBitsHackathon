@@ -218,7 +218,7 @@ export function horizonFromProfile(json) {
 /** What a horizon rests on, for the line under every number that depends on it. */
 export const BASIS_LABEL = {
   profile: 'LOLA 5 m site DEM, far field 80 m',
-  block: 'LOLA LDEM64, 64 px/deg (474 m)',
+  block: 'LOLA LDEM64, 64 pixels/degree (474 m)',
   globe: 'LOLA global grid, 7.6 km cells',
   smooth: 'smooth sphere, no terrain',
 };
