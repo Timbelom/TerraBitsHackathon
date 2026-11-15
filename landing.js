@@ -714,12 +714,12 @@ skyToggle.addEventListener('keydown', e => { if (e.key === ' ') { e.preventDefau
 let landAt = ms => setTime(ms);                       // a square of a card's delay row; replaced by the time bar block below, which also moves a set span
 const cards = createCards({ hero, pins, now: () => simMs, disc: () => moonDisc, avoid: () => [series.rect(), skyView.rect(), compare.rect(), panelRect(timebarEl), panelRect(legendBox)],
   ground: s => siteData.get(s, true), groundVersion: dataVersion, window: () => limitWindow, limits, onTerrain: s => openTerrain(s), setTime: ms => landAt(ms) });
-// Comparison (landing-compare.js): the numbers of the open cards side by side with a verdict. Shown only through "Compare" in the header.
-const compare = createCompare({ hero, marked: () => pins.marked(), metrics: () => cards.metrics(), limits, onClose: () => showCompare(false) });
+// Comparison (landing-compare.js): the open info cards as one table with a verdict, in place of the cards. Shown only through "Compare as table" in the header.
+const compare = createCompare({ hero, snapshot: () => cards.snapshot(), metrics: () => cards.metrics(), limits, onClose: () => showCompare(false) });
 const compareToggle = document.getElementById('compare-toggle');
-// The panels never lie on top of each other: the comparison stands alone (opening it closes the two plots and the other way round);
+// The panels never lie on top of each other: the table stands alone, in place of the cards (opening it closes the two plots and the other way round);
 // the two plots stand side by side (landing-sky.js).
-function showCompare(on) { if (on) { showSeries(false); showSky(false); } compare.show(on); compareToggle.setAttribute('aria-pressed', on); }
+function showCompare(on) { if (on) { showSeries(false); showSky(false); } compare.show(on); cards.table(on); compareToggle.setAttribute('aria-pressed', on); }
 compareToggle.addEventListener('click', e => { e.preventDefault(); showCompare(compareToggle.getAttribute('aria-pressed') !== 'true'); if (!expanded) expand(); });
 
 // --- Lunar surface: relief mesh, surface modes, layers, legend ---------------------------
@@ -922,6 +922,7 @@ function terrainPaths() {
 }
 function enterTerrain(site, block) {
   scope = 'terrain'; terrainSite = site; terrainCalc = siteData.get(site).site;
+  showCompare(false);                                     // the terrain view shows the card of its site
   document.body.classList.add('terrain');
   drag = null; hero.classList.remove('dragging'); vx = vy = 0;
   // the site's axes in the space of the system view, to carry the turning Earth over (see placeBodies)

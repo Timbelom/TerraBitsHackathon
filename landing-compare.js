@@ -1,34 +1,20 @@
-// Comparison of the marked points on the landing-page Moon ("Compare" in the header).
-// A table: one column per marked point (the selected point and every point with an open info card, pins.marked()),
-// one row per number of the cards: Sun in view, longest darkness, Earth in view, longest outage of direct-to-Earth
-// (DTE) communication, days of delay the site tolerates, and the ground the numbers rest on. The numbers are those of
-// the open cards (cards.metrics() of landing-cards.js), nothing is calculated here; a marked point without a card
-// says "open its card". The best value of a row carries a tick (most Sun and Earth, shortest gaps, most days of delay);
-// no tick when the values are equal. On coarse ground a point has no days of delay (the card says so too).
-// Above the table one sentence gives the verdict, from the numbers of the table only: the days of delay of each point,
-// most first; with no limit set, the share of sunlight. It adds when points rest on different ground.
-// The panel behaves like the time series: shown and hidden by the header entry (show(); off at the start), with a
-// close button, opens top left and can be dragged (or moved with the arrow keys); the info cards keep clear of it (rect()).
+// The info cards as a table ("Compare as table" in the header).
+// The table stands in for the cards: while it is shown the cards and their lines leave the screen (cards.table()), and it
+// shows exactly what they show, one column per open card, one row per value, in the order and with the colours of the
+// cards (green and red are the cards' own judgements): the ground, the Sun and the Earth at the simulated time, the
+// numbers of the time span against the limits, and the delay row with its squares (a click on a square acts as on the
+// card). Nothing is calculated here: the texts come from cards.snapshot(), the verdict from cards.metrics().
+// Above the table one sentence gives the verdict: the days of delay of each point, most first; with no limit set, the
+// share of sunlight. It adds when points rest on different ground.
+// Shown and hidden by the header entry (show(); off at the start) or its close button, which brings the cards back.
+// Opens top left and can be dragged (or moved with the arrow keys).
 
-const EDGE = 16, TOP = 93, LEFT = 72, REFRESH_MS = 250;      // px: gap to the hero's edge, clear of the header and of the Parameters tab
-const HOUR = 3600000, DAY = 86400000;
+const EDGE = 16, TOP = 93, LEFT = 72, REFRESH_MS = 200;      // px: gap to the hero's edge, clear of the header and of the Parameters tab
 const CLOSE_SVG = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8"/></svg>';
-const BEST_SVG = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 7.5l3 3 6-7"/></svg>';
-const day = ms => new Date(ms).toISOString().slice(0, 10);
-const hours = (h, open) => (open ? '≥ ' : '') + (h < 100 ? h.toFixed(1) : Math.round(h)) + ' h';
 const share = v => (v.share * 100).toFixed(1) + ' %';
 const list = names => names.length < 2 ? names.join('') : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
-/** Days of delay of a column, or null: no card, no limit set, or coarse ground. */
+/** Days of delay of a column, or null: no limit set, or coarse ground. */
 const delayOf = c => c.delay && !c.coarse ? c.delay : null;
-
-/** Indices of the best of the values (numbers; null = no value): the highest, or the lowest with higher = false. Empty with fewer than two values or when all are equal. */
-export function bestOf(values, higher = true) {
-  const have = values.filter(v => v != null), out = new Set();
-  if (have.length < 2 || have.every(v => v === have[0])) return out;
-  const best = higher ? Math.max(...have) : Math.min(...have);
-  values.forEach((v, i) => { if (v === best) out.add(i); });
-  return out;
-}
 
 /**
  * The sentence above the table, from the columns of the table only. cols: cards.metrics() (name, basis, coarse,
@@ -52,36 +38,34 @@ export function verdict(cols, limits) {
   return out.join(' ');
 }
 
-/** The rows of the table: label and, per column, the text and the number that is compared (null = not compared). */
-export function rows(cols, missionMs) {
-  const cell = (text, value = null) => ({ text, value });
-  const mission = missionMs == null ? '' : ', ' + (missionMs % DAY ? Math.round(missionMs / HOUR) + ' h' : missionMs / DAY + ' d') + ' mission';
-  return [
-    { label: 'Sun in view', higher: true, cells: cols.map(c => cell(share(c.sun), c.sun.share)) },
-    { label: 'Longest darkness', higher: false, cells: cols.map(c => cell(hours(c.sun.longestGapHours, c.sun.longestGapOpen), c.sun.longestGapHours)) },
-    { label: 'Earth in view', higher: true, cells: cols.map(c => cell(share(c.earth), c.earth.share)) },
-    { label: 'Longest DTE outage', higher: false, cells: cols.map(c => cell(hours(c.earth.longestGapHours, c.earth.longestGapOpen), c.earth.longestGapHours)) },
-    { label: 'Days of delay' + mission, higher: true, cells: cols.map(c => !c.delay ? cell('no limit set') : c.coarse ? cell('coarse ground')
-      : cell(c.delay.holds < 0 ? 'not viable' : c.delay.holds + (c.delay.all ? '+' : '') + ' d', c.delay.holds)) },
-    { label: 'Ground', plain: true, cells: cols.map(c => cell(c.ground + (c.coarse ? ' (coarse)' : ''))) },
-  ];
-}
+// The rows, as on the cards. [label, field] is a value; [label, labelField, field] a value whose card row has a changing
+// label ("Sunset in" / "Sunrise in"): the table names the row once and the cell says which; '' starts a new group, 'delay' is the delay row, 'span' the heading with the time span.
+const next = (word, f) => { const W = word === 'sun' ? 'Sun' : 'Earth', lab = f[word + 'Lab'].text; return (lab.length > W.length ? lab.slice(W.length) + ' ' : '') + f[word + 'In'].text; };
+const ROWS = [
+  ['Ground', 'ground'], 'delay',
+  '',
+  ['Sub-solar point', 'sunSub'], ['Solar elevation above horizon', 'sunEl'], ['Sun’s disc in view', 'sunFrac'], ['Next sunrise or sunset', 'sun', 'sunIn'],
+  '',
+  ['Sub-Earth point', 'earthSub'], ['Earth elevation above horizon', 'earthEl'], ['Earth’s disc in view', 'earthFrac'], ['Next Earthrise or Earthset', 'earth', 'earthIn'],
+  'span',
+  ['Sun in view', 'sunShare'], ['Longest darkness', 'sunGap'], ['Earth in view', 'earthShare'], ['Longest DTE outage', 'earthGap'],
+];
 
 /**
- * hero: the hero element (the panel lives in it); marked(): the marked sites ({ id, name }); metrics(): the numbers of the
- * open cards (cards.metrics()); limits(): { dark, dte } in hours, null = off; onClose(): the panel's close button was pressed.
+ * hero: the hero element (the panel lives in it); snapshot(): what the open cards show (cards.snapshot()); metrics(): their
+ * numbers for the verdict (cards.metrics()); limits(): { dark, dte } in hours, null = off; onClose(): the close button was pressed.
  */
-export function createCompare({ hero, marked, metrics, limits, onClose }) {
+export function createCompare({ hero, snapshot, metrics, limits, onClose }) {
   const el = document.createElement('section'); el.className = 'compare'; el.hidden = true; el.tabIndex = 0;
-  el.setAttribute('aria-label', 'Comparison of the marked points');
-  el.innerHTML = '<header><h2>Compare</h2><button type="button" class="compare-close" aria-label="Close">' + CLOSE_SVG + '</button></header>'
-    + '<p class="compare-empty">Mark two or more points on the Moon and open their cards to compare them.</p>'
-    + '<p class="compare-verdict" role="status"></p><p class="compare-span"></p><div class="compare-scroll"><table></table></div>';
+  el.setAttribute('aria-label', 'The info cards as a table');
+  el.innerHTML = '<header><h2>Compare</h2><button type="button" class="compare-close" aria-label="Back to the info cards">' + CLOSE_SVG + '</button></header>'
+    + '<p class="compare-empty">Click a marker on the Moon to open its info card. The table compares the open cards.</p>'
+    + '<p class="compare-verdict" role="status"></p><div class="compare-scroll"><table></table></div>';
   hero.append(el);
-  const verdictEl = el.querySelector('.compare-verdict'), spanEl = el.querySelector('.compare-span'), table = el.querySelector('table');
+  const verdictEl = el.querySelector('.compare-verdict'), table = el.querySelector('table');
   el.querySelector('.compare-close').addEventListener('click', () => onClose?.());
 
-  let on = false, key = '', last = 0;
+  let on = false, key = '', last = 0, picks = [];
   // Position in hero px. Until the panel is moved by hand it sits top left.
   const at = { x: 0, y: 0, manual: false };
   const clamp = (v, a, b) => Math.max(a, Math.min(v, Math.max(a, b)));
@@ -101,30 +85,40 @@ export function createCompare({ hero, marked, metrics, limits, onClose }) {
     const d = { ArrowLeft: [-16, 0], ArrowRight: [16, 0], ArrowUp: [0, -16], ArrowDown: [0, 16] }[e.key];
     if (d && e.target === el) { e.preventDefault(); at.manual = true; moveTo(at.x + d[0], at.y + d[1]); }
   });
+  // a square of a delay row: as on the card of that column
+  table.addEventListener('click', e => {
+    const b = e.target.closest('.card-day'), td = b?.closest('td');
+    if (b && td) { picks[td.cellIndex - 1]?.(+b.dataset.k); key = ''; }
+  });
 
   const node = (tag, text, cls) => { const n = document.createElement(tag); if (text != null) n.textContent = text; if (cls) n.className = cls; return n; };
-  function draw(sites, cols, lim) {
-    const withCard = sites.map(s => cols.find(c => c.id === s.id)).filter(Boolean), first = withCard[0];
-    verdictEl.textContent = withCard.length > 1 ? verdict(withCard, lim) : 'Open the cards of the marked points to compare their numbers.';
-    // the span the numbers cover and the limits they are held against; the first mention of DTE spells it out
-    spanEl.textContent = (first ? (first.free ? 'Next 24 h' : day(first.startMs) + ' to ' + day(first.endMs) + ' UTC') + ' · ' : '')
-      + 'Limits: darkness ' + (lim.dark == null ? 'off' : lim.dark + ' h') + ', direct-to-Earth (DTE) outage ' + (lim.dte == null ? 'off' : lim.dte + ' h');
+  function draw(cols, lim) {
+    const m = metrics();
+    verdictEl.textContent = cols.length > 1 ? verdict(cols.map(c => m.find(x => x.id === c.id)).filter(Boolean), lim) : '';
+    verdictEl.hidden = cols.length < 2;
     const head = node('tr'); head.append(node('td'));
-    for (const s of sites) { const th = node('th', s.name); th.scope = 'col'; head.append(th); }
+    for (const c of cols) { const th = node('th', c.name); th.scope = 'col'; if (c.coord) th.append(node('small', c.coord)); head.append(th); }
     const thead = node('thead'); thead.append(head);
-    const tbody = node('tbody'), all = rows(withCard, first?.missionMs);
-    all.forEach((r, ri) => {
-      const tr = node('tr', null, r.plain ? 'compare-plain' : ''), th = node('th', r.label); th.scope = 'row'; tr.append(th);
-      const best = r.plain ? new Set() : bestOf(r.cells.map(c => c.value), r.higher);
-      for (const s of sites) {
-        const i = withCard.findIndex(c => c.id === s.id);
-        if (i < 0) { if (!ri) { const td = node('td', 'open its card', 'compare-none'); td.rowSpan = all.length; tr.append(td); } continue; }
-        const td = node('td', r.cells[i].text, r.cells[i].value == null ? 'compare-text' : '');
-        if (best.has(i)) { td.className = 'compare-best'; td.insertAdjacentHTML('afterbegin', BEST_SVG + '<span class="compare-sr">best: </span>'); }
-        tr.append(td);
+    const tbody = node('tbody'); let gap = false;
+    for (const r of ROWS) {
+      if (r === '') { gap = true; continue; }                               // a new group: set apart by spacing
+      if (r === 'delay') {                                                 // the delay row of each card, copied as it is painted there
+        const tr = node('tr', null, 'compare-delay'), th = node('th', 'Delay the site tolerates'); th.scope = 'row'; tr.append(th);
+        for (const c of cols) { const td = node('td'), copy = c.delay.el.cloneNode(true); copy.querySelectorAll('.card-day').forEach(b => { b.tabIndex = -1; }); td.append(copy); tr.append(td); }
+        tbody.append(tr); continue;
+      }
+      if (r === 'span') {                                                  // heading: the time span the next rows cover
+        const tr = node('tr', null, 'compare-group'), th = node('th', cols[0].f.span.text); th.colSpan = cols.length + 1; th.scope = 'rowgroup'; tr.append(th); tbody.append(tr);
+        continue;
+      }
+      const tr = node('tr', null, r[1] === 'ground' ? 'compare-plain' : gap ? 'compare-gap' : ''), th = node('th', r[0]); th.scope = 'row'; tr.append(th); gap = false;
+      for (const c of cols) {
+        const f = c.f[r[r.length - 1]], text = r[1] === 'ground' ? f.text.replace(/^Ground: /, '') : r.length > 2 ? next(r[1], c.f) : f.off ? '–' : f.text;
+        tr.append(node('td', text, f.off ? '' : f.tone));
       }
       tbody.append(tr);
-    });
+    }
+    picks = cols.map(c => c.delay.pick);
     table.replaceChildren(thead, tbody);
   }
 
@@ -135,19 +129,17 @@ export function createCompare({ hero, marked, metrics, limits, onClose }) {
     const t = performance.now();
     if (t - last > REFRESH_MS || !key) {
       last = t;
-      const sites = marked(), few = sites.length < 2;
-      el.classList.toggle('empty', few);
-      if (few) key = ' ';
+      const cols = snapshot(), none = !cols.length;
+      el.classList.toggle('empty', none);
+      if (none) key = ' ';
       else {
-        const cols = metrics(), lim = limits();
-        // redrawn only when something the table shows has changed
-        const k = JSON.stringify([sites.map(s => [s.id, s.name]), lim, cols.map(c => [c.id, c.basis, c.free, c.startMs, c.endMs, c.missionMs, c.sun.share, c.sun.longestGapHours, c.earth.share, c.earth.longestGapHours, c.delay && [c.delay.holds, c.delay.all]])]);
-        if (k !== key) { key = k; el.style.width = Math.min(hero.clientWidth - 2 * EDGE, 248 + sites.length * 176) + 'px'; draw(sites, cols, lim); }
+        const lim = limits(), k = JSON.stringify([lim, cols.map(c => [c.id, c.name, c.coord, c.f, c.delay.key])]);   // redrawn only when something the table shows has changed
+        if (k !== key) { key = k; el.style.width = Math.min(hero.clientWidth - 2 * EDGE, 264 + cols.length * 232) + 'px'; draw(cols, lim); }
       }
     }
     if (at.manual) moveTo(at.x, at.y); else moveTo(LEFT, TOP);              // also keeps the panel inside a resized hero
   }
-  /** The panel's rectangle in hero px while it is shown, otherwise null (the info cards keep clear of it). */
+  /** The panel's rectangle in hero px while it is shown, otherwise null. */
   function rect() { return el.hidden ? null : { x: at.x, y: at.y, w: el.offsetWidth, h: el.offsetHeight }; }
   function show(v) { on = v; }
   return { update, rect, show };

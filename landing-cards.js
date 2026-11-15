@@ -70,6 +70,7 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
   let lastFill = 0;
   const still = matchMedia('(prefers-reduced-motion: reduce)');
   let docked = null, dockTop = TOP;                // see dock() below
+  let tabled = false;                              // see table() below
   pins.onOpen = s => cards.has(s.id) ? close(s.id) : open(s);
   pins.onClose = id => close(id);
 
@@ -338,7 +339,11 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
     const t = performance.now(), refresh = t - lastFill > REFRESH_MS, ms = now();
     if (refresh) lastFill = t;
     // delay tables that are out of date (landing, mission or ground changed): one card per frame, so many cards do not hold up a frame
-    for (const c of cards.values()) if (!c.el.hidden && c.d && c.dKey !== c.dWant) { delay(c); paintDelay(c, ground(c.site).basis, limits()); break; }
+    for (const c of cards.values()) if ((tabled || !c.el.hidden) && c.d && c.dKey !== c.dWant) { delay(c); paintDelay(c, ground(c.site).basis, limits()); break; }
+    if (tabled && !docked) {                                                             // shown as a table instead (landing-compare.js): kept up to date, not on screen
+      for (const c of cards.values()) { if (!c.el.hidden) { c.el.hidden = true; c.line.style.display = 'none'; } if (refresh) fill(c, ms); }
+      return;
+    }
     if (docked) {
       const c = cards.get(docked); if (!c) return;
       if (c.el.hidden) { c.el.hidden = false; fill(c, ms); }
@@ -387,5 +392,22 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
     }
     return out;
   }
-  return { update, open, close, dock, relayout, fit, metrics, count: () => cards.size, has: id => cards.has(id) };
+  /** Table mode: the cards leave the screen (with their lines) while the comparison shows their values as a table; off brings them back to their places. */
+  function table(on) {
+    if (tabled === on) return; tabled = on; lastFill = 0;
+    if (!on) for (const c of cards.values()) { c.el.hidden = true; c.fresh = !c.manual; }     // update() shows each card whose site is in view again
+  }
+  /**
+   * What every open card shows, for the table: id, name and coordinates of the site, and per field of the card (the data-f
+   * keys: ground, sunSub, sunEl, ... earthGap, span) its text, its judgement ('good', 'bad' or '') and off (the row is left out
+   * on the card); delay: the card's delay row (element, to be copied) with key (changes when the row was repainted) and pick(k),
+   * a click on day k.
+   */
+  function snapshot() {
+    return [...cards.values()].map(c => {
+      const f = {}; for (const k in c.f) f[k] = { text: c.shown[k] ?? '', tone: c.tones[k] ?? '', off: c.rows[k] === false };
+      return { id: c.site.id, name: c.site.name, coord: c.site.name !== coordText(c.site) ? coordText(c.site) : '', f, delay: { el: c.delay, key: c.dShown, pick: k => c.days[k].click() } };
+    });
+  }
+  return { update, open, close, dock, relayout, fit, metrics, table, snapshot, count: () => cards.size, has: id => cards.has(id) };
 }
