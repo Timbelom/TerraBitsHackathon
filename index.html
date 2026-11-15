@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#03050b"><title>L.U.N.A. — Lunar Understanding, Navigation &amp; Analysis | TerraBits</title><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%2303050b'/%3E%3Ccircle cx='8' cy='8' r='5' fill='%23eceef1'/%3E%3C/svg%3E"><link rel="stylesheet" href="tokens.css?v=5"><link rel="stylesheet" href="landing.css?v=18"><link rel="stylesheet" href="landing-pins.css?v=2"><link rel="stylesheet" href="landing-search.css?v=4"><link rel="stylesheet" href="landing-cards.css?v=5"><link rel="stylesheet" href="landing-series.css?v=6"><link rel="stylesheet" href="landing-terrain.css?v=7"><script type="importmap">{"imports":{"three":"./vendor/three@0.169.0/build/three.module.js","three/addons/":"./vendor/three@0.169.0/examples/jsm/"}}</script><style>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#03050b"><title>L.U.N.A. — Lunar Understanding, Navigation &amp; Analysis | TerraBits</title><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%2303050b'/%3E%3Ccircle cx='8' cy='8' r='5' fill='%23eceef1'/%3E%3C/svg%3E"><link rel="stylesheet" href="tokens.css?v=5"><link rel="stylesheet" href="landing.css?v=19"><link rel="stylesheet" href="landing-pins.css?v=2"><link rel="stylesheet" href="landing-search.css?v=4"><link rel="stylesheet" href="landing-cards.css?v=5"><link rel="stylesheet" href="landing-series.css?v=6"><link rel="stylesheet" href="landing-terrain.css?v=7"><script type="importmap">{"imports":{"three":"./vendor/three@0.169.0/build/three.module.js","three/addons/":"./vendor/three@0.169.0/examples/jsm/"}}</script><style>
 /* L.U.N.A. hero subtitle — presentation only; no viewer logic changed. */
 .hero-subtitle{max-width:min(740px,calc(100vw - 48px));margin:16px auto 0;color:#d1dce6;font-family:'DM Sans',Arial,sans-serif;font-size:clamp(11px,1.1vw,16px);font-weight:400;letter-spacing:.17em;line-height:1.6;text-shadow:0 2px 18px #02040bdd;text-transform:uppercase}
 @media(max-width:760px){.hero-subtitle{max-width:calc(100vw - 38px);margin-top:12px;font-size:11px;letter-spacing:.11em;line-height:1.7}}
@@ -20,5 +20,85 @@
 <div class="pitem" role="group" aria-label="Lunar surface"><div class="phead"><label for="p-surface">Surface</label></div><select id="p-surface" aria-describedby="p-surface-note"><option value="relief">Relief with shadows</option><option value="imagery">Imagery, LROC WAC</option><option value="elevation">Elevation, LOLA</option><option value="sunlight" disabled>Mean sunlight 2027</option><option value="earth" disabled>Earth in view 2027</option></select><p class="pnote" id="p-surface-note"></p></div>
 <div class="pitem ptoggles" role="group" aria-label="Layers"><button type="button" class="param" data-param="orbits" aria-pressed="true"><span>Sun and Earth orbits</span><i></i></button><button type="button" class="param" data-param="historical" aria-pressed="false"><span>Landing sites</span><i></i></button><button type="button" class="param" data-param="graticule" aria-pressed="false"><span>Lat/lon grid, 30°</span><i></i></button><button type="button" class="param" data-param="contours" aria-pressed="true"><span>Elevation contours</span><i></i></button><button type="button" class="param" data-param="squares" aria-pressed="false"><span>200 km squares</span><i></i></button></div>
 </div></div><div class="params-grip" id="params-grip" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" tabindex="0"></div><button type="button" class="params-tab" id="params-tab" aria-expanded="false" aria-controls="params-panel"><span>Parameters</span><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 2.5 9.5 7 5 11.5"/></svg></button></aside></section>
-<section class="story" id="about"><div class="story-index">01 / OUR MISSION</div><h2>One Moon.<br>Every perspective.</h2><p>L.U.N.A. brings lunar exploration into one flexible 3D workspace. Navigate the entire Moon, dive into real terrain, explore coordinates and landing sites, and switch between relief, imagery, elevation and analytical overlays. Move through time to see how sunlight, shadows and Earth visibility change, then assess the conditions that matter for exploration. Powered by NASA LOLA topography and JPL Horizons.</p><a href="#moon" data-enter class="underlink">Explore the Moon ↗</a></section><section class="contacts" id="contacts" aria-label="TerraBits team"><div class="story-index">02 / THE PEOPLE</div><h2>Built by curiosity.</h2><p>We are motivated LMU and TUM students with a shared interest in technology and physics.</p><div class="people"><a href="https://www.linkedin.com/in/roman-belomutskiy-39a29737a/" target="_blank" rel="noopener noreferrer">Roman Belomutskiy <span>LinkedIn ↗</span></a><a href="https://www.linkedin.com/in/nakulan-s/" target="_blank" rel="noopener noreferrer">Nakulan S. <span>LinkedIn ↗</span></a><a href="https://www.linkedin.com/in/lennikolhoff/" target="_blank" rel="noopener noreferrer">Lenni Kolhoff <span>LinkedIn ↗</span></a><a href="https://www.linkedin.com/in/timur-belomutskiy-4b36b4255/" target="_blank" rel="noopener noreferrer">Timur Belomutskiy <span>LinkedIn ↗</span></a><span>Johannes Hille</span><span>Edgar Bunte</span></div></section><footer><span>TERRABITS</span><span>Terrain: NASA LOLA (PGDA) · Sun and Earth: NASA JPL Horizons · Imagery: NASA SVS, LROC WAC · Sun: courtesy of NASA/SDO and the AIA, EVE, and HMI science teams</span></footer></main>
+<section class="story story--stakeholders" id="about" aria-label="Why L.U.N.A. matters and our mission">
+  <div class="story-two-up">
+    <article class="story-column story-value">
+      <div class="story-index">01 / THE VALUE</div>
+      <p class="story-kicker">FROM LUNAR DATA TO REAL DECISIONS</p>
+      <h2>Explore the terrain.<br>Plan the mission.</h2>
+      <p class="story-intro">A lunar landing site is more than a set of coordinates. L.U.N.A. lets explorers, researchers and mission planners see how the landscape and the passage of time affect real operational choices.</p>
+      <ul class="value-points">
+        <li><strong>Find viable locations.</strong><span>Compare terrain, elevation and candidate sites in an interactive 3D environment.</span></li>
+        <li><strong>Plan around daylight.</strong><span>Move through a timeline to study changing sunlight, shadows and potential power interruptions.</span></li>
+        <li><strong>Assess communications.</strong><span>Examine terrain-dependent Earth visibility and periods without direct line of sight.</span></li>
+        <li><strong>Make complex data understandable.</strong><span>Bring models, time-dependent calculations and visual layers into one explorable view.</span></li>
+      </ul>
+      <a href="#moon" data-enter class="underlink">Explore the Moon ↗</a>
+    </article>
+    <article class="story-column story-mission">
+      <div class="story-index">02 / OUR MISSION</div>
+      <h2>One Moon.<br>Every perspective.</h2>
+      <p>L.U.N.A. brings lunar exploration into one flexible 3D workspace. Navigate the entire Moon, dive into real terrain, explore coordinates and landing sites, and switch between relief, imagery, elevation and analytical overlays.</p>
+      <p>Move through time to see how sunlight, shadows and Earth visibility change, then assess the conditions that matter for exploration. Powered by NASA LOLA topography and JPL Horizons.</p>
+      <p class="story-mission-footnote">An accessible bridge between scientific datasets, visual understanding and better-informed mission planning.</p>
+    </article>
+  </div>
+</section><section class="contacts contacts--team" id="contacts" aria-label="The people behind L.U.N.A.">
+  <div class="team-heading">
+    <div class="story-index">03 / THE TEAM</div>
+    <h2>The minds behind the Moon.</h2>
+    <p>Four hands-on contributors united product vision, scientific modeling, engineering and delivery to make L.U.N.A. possible.</p>
+  </div>
+  <div class="team-grid">
+    <article class="team-card">
+      <a class="team-photo-link" href="https://www.linkedin.com/in/roman-belomutskiy-39a29737a/" target="_blank" rel="noopener noreferrer" aria-label="Roman Belomutskiy on LinkedIn">
+        <img class="team-photo" src="assets/team/roman.jpg" alt="Initials avatar for Roman Belomutskiy; replace with an approved portrait" loading="lazy">
+      </a>
+      <div class="team-card-body">
+        <p class="team-role">Concept &amp; Presentation</p>
+        <h3>Roman Belomutskiy</h3>
+        <p class="team-bio">Project requirements, storytelling and presenting the concept.</p>
+        <div class="team-contribution"><span>CONTRIBUTION</span><p>Developed and communicated the project's requirements and presentation narrative.</p></div>
+        <a class="team-link" href="https://www.linkedin.com/in/roman-belomutskiy-39a29737a/" target="_blank" rel="noopener noreferrer">LinkedIn profile ↗</a>
+      </div>
+    </article>
+    <article class="team-card">
+      <a class="team-photo-link" href="https://www.linkedin.com/in/nakulan-s/" target="_blank" rel="noopener noreferrer" aria-label="Nakulan Sundarraju on LinkedIn">
+        <img class="team-photo" src="assets/team/nakulan.jpg" alt="Initials avatar for Nakulan Sundarraju; replace with an approved portrait" loading="lazy">
+      </a>
+      <div class="team-card-body">
+        <p class="team-role">3D Modeling &amp; Data Engineering</p>
+        <h3>Nakulan Sundarraju</h3>
+        <p class="team-bio">Electrical &amp; Computer Engineering student at the Technical University of Munich.</p>
+        <div class="team-contribution"><span>CONTRIBUTION</span><p>Built backend terrain modeling and calculations, integrated APIs and aggregated data.</p></div>
+        <a class="team-link" href="https://www.linkedin.com/in/nakulan-s/" target="_blank" rel="noopener noreferrer">LinkedIn profile ↗</a>
+      </div>
+    </article>
+    <article class="team-card">
+      <a class="team-photo-link" href="https://www.linkedin.com/in/lennikolhoff/" target="_blank" rel="noopener noreferrer" aria-label="Lenni Kolhoff on LinkedIn">
+        <img class="team-photo" src="assets/team/lenni.jpg" alt="Initials avatar for Lenni Kolhoff; replace with an approved portrait" loading="lazy">
+      </a>
+      <div class="team-card-body">
+        <p class="team-role">Product Vision &amp; UX/UI</p>
+        <h3>Lenni Kolhoff</h3>
+        <p class="team-bio">Interested in bringing AI, interfaces and software systems into practical use.</p>
+        <div class="team-contribution"><span>CONTRIBUTION</span><p>Shaped the product vision, designed the UX/UI and implemented interactive functionality and requirements.</p></div>
+        <a class="team-link" href="https://www.linkedin.com/in/lennikolhoff/" target="_blank" rel="noopener noreferrer">LinkedIn profile ↗</a>
+      </div>
+    </article>
+    <article class="team-card">
+      <a class="team-photo-link" href="https://www.linkedin.com/in/timur-belomutskiy-4b36b4255/" target="_blank" rel="noopener noreferrer" aria-label="Timur Belomutskiy on LinkedIn">
+        <img class="team-photo" src="assets/team/timur.jpg" alt="Initials avatar for Timur Belomutskiy; replace with an approved portrait" loading="lazy">
+      </a>
+      <div class="team-card-body">
+        <p class="team-role">Product Delivery &amp; Operations</p>
+        <h3>Timur Belomutskiy</h3>
+        <p class="team-bio">Working at the intersection of product ownership and digitalization.</p>
+        <div class="team-contribution"><span>CONTRIBUTION</span><p>Coordinated the project, tested data and user flows, and managed hosting, rollout and delivery.</p></div>
+        <a class="team-link" href="https://www.linkedin.com/in/timur-belomutskiy-4b36b4255/" target="_blank" rel="noopener noreferrer">LinkedIn profile ↗</a>
+      </div>
+    </article>
+  </div>
+  <div class="team-thanks"><span>WITH VALUABLE INPUT FROM</span><p><strong>Johannes Hille</strong> and <strong>Edgar Bunte</strong> — for the perspectives and feedback that helped us structure the project.</p></div>
+</section><footer><span>TERRABITS</span><span>Terrain: NASA LOLA (PGDA) · Sun and Earth: NASA JPL Horizons · Imagery: NASA SVS, LROC WAC · Sun: courtesy of NASA/SDO and the AIA, EVE, and HMI science teams</span></footer></main>
 <script type="module" src="landing.js?v=47"></script></body></html>
