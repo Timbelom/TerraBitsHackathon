@@ -70,8 +70,7 @@ depends on the heights only and no number of the page uses it.
 | `tools/` | Python: `serve.py` local server, `build_globe.py`, `build_terrain.py`, `build_exposure.py` data files, `check_frames.py` frame check, `lunar.py` shared geometry and the terrain block format |
 | `tests/` | `node --test` (also runs the Expiry Date tests) |
 | `vendor/three@0.169.0/` | three.js, so the page needs no CDN |
-| `global_viewer.py`, `slice.py`, `lunar_global_tiered_3d.html`, `mond_3d_linear_viewer.html` | The earlier stand-alone 3D viewer. Its globe, terrain view and tile logic now live in `view/`, `core/` and `tools/`; kept for reference |
-| `globe.html`, `terrain.html`, `explore.html` and their scripts | Earlier pages, no longer linked |
+| `legacy/` | Not part of the product, kept for reference: the earlier stand-alone 3D viewer (`global_viewer.py`, `slice.py` and the two pages they wrote), the earlier pages `globe.html`, `terrain.html`, `explore.html` with their scripts and data, and the planning board's Supabase settings |
 
 ## Data and sources
 
