@@ -997,7 +997,9 @@ function frame(now) {
     zoomK = a.from + (a.to - a.from) * e; if (p === 1) zoomAnim = null;
     layout();
   }
+  const spanA = spanWindow.a, spanB = spanWindow.b;
   updateWindow();
+  if (spanWindow.a !== spanA || spanWindow.b !== spanB) onClock?.();     // the ends of the time slider follow a span set while the clock stands
   area.update(); terrainExposure();
   pins.update(bufW, bufH);
   pointToBodies();
