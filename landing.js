@@ -593,6 +593,7 @@ const cards = createCards({ hero, pins, now: () => simMs, disc: () => moonDisc, 
 // "Surface" of the sidebar chooses what the ground shows; the layers lie over it. The same choice holds in
 // the terrain view, where the colour-coded global grids (sunlight, Earth) have no counterpart and relief is shown.
 const surfaceSelect = document.getElementById('p-surface'), surfaceNote = document.getElementById('p-surface-note');
+let detailNote = '';                                  // set when the Moon was rebuilt with the lighter mesh
 let surfaceMode = 'relief', globeGrid = null;
 const layerOn = { graticule: false, contours: true, squares: false };
 const SURFACES = {                                    // the colour-coded surfaces and what their legend says
@@ -632,7 +633,7 @@ function applySurface() {
   renderer.shadowMap.needsUpdate = true;
   surfaceNote.textContent = inTerrain && (surfaceMode === 'sunlight' || surfaceMode === 'earth') ? 'This surface exists for the whole Moon only; the terrain view shows relief.'
     : !globe && surfaceMode !== 'relief' ? 'Needs the global height grid, which has not loaded.'
-    : shown !== surfaceMode ? 'Not available: the data for this surface has not loaded.' : '';
+    : shown !== surfaceMode ? 'Not available: the data for this surface has not loaded.' : detailNote;
   updateLegend();
 }
 const legendEl = document.getElementById('legend'), legendTitle = document.getElementById('legend-title'), legendBar = document.getElementById('legend-bar'),
@@ -663,13 +664,22 @@ function updateLegend() {
 
 // If frames take too long with the full mesh, the Moon is rebuilt once with a quarter of the triangles and a
 // smaller shadow map. Measured over two seconds of the system view, not while anything is loading.
-let slowTime = 0, slowFrames = 0, lightDetail = startLight;
+let slowTime = 0, slowFrames = 0, longFrames = 0, lightDetail = startLight;
 function watchFrameTime(real) {
-  if (lightDetail || !globe || !expanded || zoom || document.hidden || real > .5) { slowTime = slowFrames = 0; return; }
-  slowTime += real; slowFrames++;
+  if (lightDetail || !globe || !expanded || zoom || document.hidden) { slowTime = slowFrames = longFrames = 0; return; }
+  if (real > .5) {                                     // one such frame is a pause or a load; four in a row are the mesh
+    slowTime = slowFrames = 0;
+    if (++longFrames >= 4) lighten(1 / real);
+    return;
+  }
+  longFrames = 0; slowTime += real; slowFrames++;
   if (slowTime < 2) return;
   const fps = slowFrames / slowTime; slowTime = slowFrames = 0;
-  if (fps < 20) { lightDetail = true; console.info('Lunar surface drawn with less detail: ' + fps.toFixed(0) + ' frames per second with the full mesh.'); buildGlobe(2); }
+  if (fps < 20) lighten(fps);
+}
+function lighten(fps) {
+  lightDetail = true; detailNote = 'Moon drawn with a lighter mesh: the full mesh ran at ' + (fps < 1 ? 'under 1 frame' : fps.toFixed(0) + ' frames') + ' per second.';
+  console.info(detailNote); buildGlobe(2);
 }
 
 // --- Values under the pointer ------------------------------------------------------------
