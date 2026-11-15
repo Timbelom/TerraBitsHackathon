@@ -149,6 +149,12 @@ class Server(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = sys.platform != "win32"       # on Windows this would let two servers share a port
 
+    def handle_error(self, request, client_address):
+        # A browser that closes a tab or cancels a download is not an error worth a traceback.
+        if isinstance(sys.exc_info()[1], (ConnectionError, TimeoutError)):
+            return
+        super().handle_error(request, client_address)
+
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
