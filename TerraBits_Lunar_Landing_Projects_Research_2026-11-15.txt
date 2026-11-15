@@ -1,0 +1,275 @@
+TERRABITS BEYOND. — RECHERCHE: LUNAR LANDING SITE NAVIGATOR
+Stand: 15. November 2026
+Format: TXT / direkte URLs zum Kopieren
+
+ZIEL
+17 konkrete öffentliche Projekte: die 7 bereits besprochenen Repositories,
+10 weitere thematisch verwandte Projekte; danach besonders interessante
+Vergleichsprojekte und tatsächlich bestätigte Gewinner der NASA Space Apps 2025.
+
+WICHTIGE EINORDNUNG
+- Das 2026er NASA Space Apps Event findet am 14.–15. November 2026 statt.
+  Die Projekte können sich während und nach dem Event noch ändern.
+- Die öffentlich zugänglichen GitHub-Readmes zeigen ein beabsichtigtes Projekt
+  oder beschriebenen Funktionsstand, keine unabhängige Prüfung aller Algorithmen.
+- Eine verlässliche Zuordnung sämtlicher Links zu den TEXTEN der offiziellen
+  NASA-Teamprofile war wegen wechselnder 502-Fehler des Teams-Tabs nicht möglich.
+- "Challenge 2026" = Repository behauptet ausdrücklich Teilnahme bzw.
+  Entwicklung für Lunar Landing Site Navigator 2026; keine amtliche Zulassungsbestätigung.
+- "Unabhängig" = nicht automatisch Teilnehmer oder Gewinner.
+- Die zusätzliche 5-m-Hazard-Analyse im eigenen BEYOND.-Projekt ist keine
+  Landefreigabe; die Auflösung kann Subpixel-Felsen/Krater nicht erfassen.
+
+OFFIZIELLE CHALLENGE
+https://www.spaceappschallenge.org/2026/challenges/lunar-landing-site-navigator/
+https://www.spaceappschallenge.org/2026/challenges/lunar-landing-site-navigator/?tab=teams
+Aufgabe: Sonneneinstrahlung und direkte Sicht zur Erde relativ zum lokalen
+Geländehorizont für verschiedene Mond-Landeorte und -Zeitpunkte vergleichen.
+
+======================================================================
+A. DIE 7 BEREITS BESPROCHENEN PROJEKTE
+======================================================================
+
+01. KESTRO AEROSPACE — LUNAR SITE NAVIGATOR [2026-CHALLENGE]
+Repository: https://github.com/Littiary/lunar-site-navigator
+Team/Event: Kestro Aerospace, Aachen.
+Fokus: 360-Grad-Geländehorizont aus LOLA, Sonnen-/Erdsichtfenster,
+SPICE-Ephemeriden, reproduzierbare Python-Pipeline, Validierung.
+BEYOND.-Relevanz: SEHR HOCH — echte Horizontberechnung und wissenschaftliche
+Validierung für unsere 3D-Ansicht; Qualität der reproduzierbaren Ergebnisse.
+
+02. LUNAR NAVIGATOR (SINGAPORE) [2026-CHALLENGE]
+Repository: https://github.com/daniel27-space/lunar-navigator
+Live-Demo: https://daniel27-space.github.io/lunar-navigator/
+Fokus: begeh-/betrachtbares 3D-Mondgelände, Sonnenstand, Earth visibility,
+Geländeschatten, Standort-Ranking, 2–3 Orte vergleichen, 60-Tage-Fenster.
+BEYOND.-Relevanz: EXTREM HOCH — interaktive 3D-Visualisierung und vergleichbare
+wissenschaftliche Funktionen. README enthält ausführliche Validierungsresultate.
+
+03. M9NX — LUNAR LANDING SITE NAVIGATOR [2026-CHALLENGE]
+Repository: https://github.com/M9nx/lunar-landing-site-navigator
+Prototype: https://m9nx.github.io/lunar-landing-site-navigator/
+Fokus: UX-/Forschungsprototyp, API/JupyterHub, Quellenverwaltung.
+ACHTUNG: Repository markiert geometrische Werte in der Demo als synthetisch;
+validierte Berechnungen waren laut README noch nicht aktiviert.
+BEYOND.-Relevanz: MITTEL — gute Referenz für Methodendokumentation und UI.
+
+04. HACKATHLONE (IRLAND) — LUNAR NAVIGATOR [2026-CHALLENGE]
+Repository: https://github.com/hkl7-dev/NasaHackathon26-LunarNavigator
+Fokus: Sonnen-/Erdsicht über LOLA-Geländehorizont, Solarpanel-Ertrag,
+Batterieüberleben während Mondnacht, Kommunikationsfenster und Link-Budget.
+BEYOND.-Relevanz: EXTREM HOCH — erweitert unsere Geländeansicht um
+konkrete Missionseignung/Power/Comms statt bloß Visualisierung.
+
+05. LUNAV ONE [2026-CHALLENGE]
+Repository: https://github.com/G4burieru/lunav_one
+Fokus: Streamlit-/Python-Anwendung mit Site Planner, Polarübersicht,
+Geländehorizont- und Sun/Earth-Charts; Bildungsprototyp.
+BEYOND.-Relevanz: MITTEL — Planungs- und Chartdarstellung.
+
+06. FLOURISHA14 — LUNAR LANDING SITE NAVIGATOR [2026-CHALLENGE]
+Repository: https://github.com/Flourisha14/lunar-landing-site-navigator
+Fokus: wissenschaftlicher Python-Backend-Ansatz mit separat angeschlossenem
+Web-Frontend, NASA SPICE, Topographie und Standortvergleich.
+ACHTUNG: einzelne Funktionen laut README geplant und nicht notwendigerweise fertig.
+BEYOND.-Relevanz: HOCH — Trennung von Datenberechnung und Browser-Visualisierung.
+
+07. MEKST6 — NASA SPACE APPS CHALLENGE 2026 [2026-CHALLENGE]
+Repository: https://github.com/Mekst6/Nasa-Space-Apps-Challange-2026
+Fokus: Vite-/Browsertool mit Datums-/Standortvergleich, Sun/Earth-Geometrie,
+NASA Horizons-Vergleichsskript und Tests.
+BEYOND.-Relevanz: HOCH — kompakte Browserarchitektur und Ephemeridenprüfung.
+
+======================================================================
+B. 10 WEITERE PROJEKTE ZUM GLEICHEN THEMA
+======================================================================
+
+08. LUNAMISSION — SOFTSASI [2026-CHALLENGE]
+Repository: https://github.com/Softsasi/LunaMission
+Fokus: südpolare Landeplatzbewertung mit LOLA-DEM, Horizont-Raymarching,
+SPICE/IAU-Koordinatensystem und Ereignissuche für Sichtbarkeitsfenster.
+BEYOND.-Relevanz: SEHR HOCH — methodische Referenz für robuste Zeitfenster
+und Terrain-/Horizon-Algorithmen. Aussagen zu Genauigkeit unabhängig testen.
+
+09. LUMINALUNA — PLANET CODERS [2026-CHALLENGE]
+Repository: https://github.com/Planet-Coders/lunar-landing-site-navigator
+Fokus: Sun/Earth-Geometrie aus JPL Horizons, zwei Standorte im Vergleich,
+3D-Südpolkarte, Horizonteinstellungen, Referenzdaten/Tests.
+WICHTIG: README sagt ausdrücklich: keine zertifizierte Landesicherheit,
+keine elektrische Leistungs- oder echte Funklink-Berechnung.
+BEYOND.-Relevanz: HOCH — klare Site-A/Site-B-Gegenüberstellung.
+
+10. NASA HACKATHON 2026 — ANDRESFERCERVELL [2026-CHALLENGE]
+Repository: https://github.com/AndresFerCervell/NASA_Hackathon_2026
+Fokus: Frontend/Backend, React Three Fiber, Interface- und KI-Nutzungsdokumentation.
+BEYOND.-Relevanz: MITTEL — 3D-Stack, Prozess- und UI-Inspiration.
+
+11. LUNAR LANDING SITE — MRDARSHAN7 [2026-THEMENPROJEKT]
+Repository: https://github.com/MRDarshan7/lunar-landing-site
+Fokus: 3D-Landeanflug, Landedemonstration, Mission-Telemetrie,
+Timeline, Site-Vergleich, NASA-Ephemeriden.
+WICHTIG: Vorinstallierte Horizontprofile werden laut README teilweise
+SYNTHETISCH berechnet; echte LOLA-Profile können separat geladen werden.
+BEYOND.-Relevanz: SEHR HOCH für Cinematics und Dashboard, aber Datenstatus prüfen.
+
+12. RIMLIGHT — FAIZAN0147 / CHAND_PAR_POHONCHO [2026-CHALLENGE]
+Repository: https://github.com/Faizan0147/Chand_par_pohoncho
+Fokus: Sonnen- und Erdrichtungen, Geländehorizont-Panorama, Timeline,
+Datum-/Launch-Slip-Vergleich, URL-basierte Ansichten.
+WICHTIG: README kennzeichnet Geländehorizonte teils als synthetische Platzhalter.
+BEYOND.-Relevanz: HOCH — gute Bedienidee für Missionszeitfenster.
+
+13. CLPS LUNAR BROWSER — SUHASLORD [2026-CHALLENGE]
+Repository: https://github.com/suhaslord/clps-lunar-browser
+Fokus: Site-/Datumauswahl, Sonnen-/Erdrichtungen, Horizon View,
+Sunlight-/Communication-Timeline. Terrain Blocking teils geplant.
+BEYOND.-Relevanz: MITTEL — schneller UX-Vergleich.
+
+14. LUNAR HORIZON / CLPS-MOON-BROWSER — LOCALIZEDPROJECTS [2026-CHALLENGE]
+Repository: https://github.com/localizedprojects/CLPS-MOON-BROWSER
+Live-App: https://localizedprojects.github.io/CLPS-MOON-BROWSER/
+Fokus: Flutter-/Web-Landeplatz- und Datumsplanung mit LOLA,
+SPICE, Beleuchtungsfenstern, Licht-/Schattenkarten, Sicht-/Vergleichsansichten.
+README enthält umfangreiche Validierung, Methoden- und Datenreferenzen.
+BEYOND.-Relevanz: EXTREM HOCH — sehr ausgearbeiteter Referenzfall
+für wissenschaftliche Nachvollziehbarkeit und Landestellenvergleich.
+
+15. LUNARSITE — ALANSENCINAS [UNABHÄNGIGES VERWANDTES PROJEKT]
+Repository: https://github.com/AlanSEncinas/LunarSite/
+Fokus: Machine-Learning-Pipeline für Mond-Südpol-Landeplatzwahl,
+Kraterdetektion, Terrainsegmentierung, XGBoost-Scoring,
+Unsicherheitsanalyse, Artemis-III-Regionsvergleich, Streamlit.
+STATUS: unabhängiges Projekt; kein nachgewiesener Teilnehmer der
+konkreten 2026er Space-Apps-Challenge.
+BEYOND.-Relevanz: EXTREM HOCH — Hazard Maps, Unsicherheit und Standortbewertung.
+
+16. LUNAR LIGHTING PLANNER — ASTOREYAI [UNABHÄNGIGES VERWANDTES PROJEKT]
+Repository: https://github.com/astoreyai/lunar-lighting-planner
+Fokus: Sun/Earth über wirklichem Terrainhorizont, Zeitfenster 1969–2040.
+WICHTIG: Autor schreibt ausdrücklich, dass dies KEIN eingereichtes
+NASA Space Apps 2026 Projekt ist (vor Hackathon entwickelt).
+BEYOND.-Relevanz: HOCH — Vergleich von Terrainhorizonten und Datumsfenstern.
+
+17. SYNEXIS — LUNAR LANDING SITE NAVIGATOR [2026-CHALLENGE]
+Live-Demo: https://synexiss.site/
+Repository: kein sicher identifizierbares öffentliches GitHub-Repository
+auf der gefundenen Webseite bestätigt.
+Fokus: JPL-Horizons-Azimut/-Elevation, LOLA-Horizonte (begrenzter Radius),
+Date-/Site-Vergleich mit dokumentierten Grenzen.
+BEYOND.-Relevanz: HOCH — Quellen-/Unsicherheitskommunikation und Demo-UX.
+
+======================================================================
+C. BESONDERS INTERESSANT FÜR TERRABITS BEYOND.
+======================================================================
+
+TOP-PRIORITÄT 1 — LUNAR NAVIGATOR SINGAPORE
+https://github.com/daniel27-space/lunar-navigator
+https://daniel27-space.github.io/lunar-navigator/
+Warum: 3D-Rendering mit physikalisch orientierter Beleuchtung,
+Topographie-Horizon, Site-Finder, Zeitfenster, drei Standorte vergleichen.
+Interessant für eine BEYOND.-Roadmap: wissenschaftliche Overlays zur
+vorhandenen 5-m-Terrainansicht und datengetriebene Shadow-Layer.
+
+TOP-PRIORITÄT 2 — LUNAR HORIZON
+https://github.com/localizedprojects/CLPS-MOON-BROWSER
+https://localizedprojects.github.io/CLPS-MOON-BROWSER/
+Warum: umfangreiche wissenschaftliche Validierung, Sonne/Erde über
+realem Horizont, direkte Vergleichsansichten, Transparenz bei Datenfehlern.
+
+TOP-PRIORITÄT 3 — KESTRO AEROSPACE
+https://github.com/Littiary/lunar-site-navigator
+Warum: klare Trennung von Science Core, Datenpipeline und Visualisierung.
+Für BEYOND.: Datum/Ort-abhängige Horizontberechnung und wissenschaftliche Checks.
+
+TOP-PRIORITÄT 4 — HACKATHLONE
+https://github.com/hkl7-dev/NasaHackathon26-LunarNavigator
+Warum: Solarenergie, Batteriekapazität und Kommunikationsfenster als
+weitere Missionskriterien jenseits der geometrischen Geländeansicht.
+
+TOP-PRIORITÄT 5 — LUNARSITE
+https://github.com/AlanSEncinas/LunarSite/
+Warum: Bewertung der Landeplatzrisiken inklusive Unsicherheit.
+Für BEYOND.: 5×5-m-Landing-Check wissenschaftlich ehrlicher gestalten;
+DEM-Limitierung von echten Gefahren-Detektionen unterscheiden.
+
+TOP-PRIORITÄT 6 — MRDARSHAN7
+https://github.com/MRDarshan7/lunar-landing-site
+Warum: Inszenierung des Landeanflugs und hochwertiges Mission-Dashboard.
+ACHTUNG: Cinematics sind nicht automatisch NASA-verifizierte Terrainrechnung.
+
+======================================================================
+D. ECHTE GLOBAL WINNERS DER NASA SPACE APPS CHALLENGE 2025
+======================================================================
+
+Die NASA hat die 2025-Gewinner am 18. Dezember 2025 veröffentlicht.
+2025 gab es KEINEN bestätigten Global Winner für die erst 2026
+veröffentlichte Challenge "Lunar Landing Site Navigator".
+Diese Beispiele sind methodisch/gestalterisch verwandt, aber andere Challenges.
+
+OFFIZIELLE GEWINNERLISTE:
+https://www.nasa.gov/learning-resources/stem-engagement-at-nasa/nasa-announces-2025-international-space-apps-challenge-global-winners/
+https://www.spaceappschallenge.org/2025/awards/global-winners/
+
+1) PUREFLOW — BEST MISSION CONCEPT AWARD (BRASILIEN)
+Challenge: Your Home in Space: The Habitat Layout Creator.
+Offizieller Nachweis: NASA-Winner-Link oben.
+Fokus: interaktive 3D-Planung und Validierung von Space Habitats,
+Power, Life Support, Kommunikation und Space-Weather-Gefahren.
+BEYOND.-Relevanz: HOCH für Missionsplanung, 3D-Systembewertung und UX.
+Repository: in der NASA-Quelle nicht verifiziert; kein GitHub-Link erfunden.
+
+2) SPACEGENES+ — BEST USE OF SCIENCE AWARD (DEUTSCHLAND)
+Challenge: Build a Space Biology Knowledge Engine.
+Offizieller Nachweis: NASA-Winner-Link oben.
+Fokus: interaktives Dashboard zu Strahlung/Mikrogravitation und
+molekularbiologischen Risiken im Weltraum.
+BEYOND.-Relevanz: MITTEL für klar visualisierte Wissenschaft und Evidenz.
+Repository: in der NASA-Quelle nicht verifiziert.
+
+3) TWISTERS / SKYSENSE — BEST USE OF TECHNOLOGY AWARD (MEXIKO)
+Challenge: Will It Rain on My Parade?
+Offizieller Nachweis: NASA-Winner-Link oben.
+Fokus: geodatenbasierte Risikoanalyse und Zeitfenster-Empfehlungen.
+BEYOND.-Relevanz: MITTEL für Risikoscoring mit verständlicher UI;
+inhaltlich Erd-Wetter statt Mond.
+Repository: in der NASA-Quelle nicht verifiziert.
+
+4) RESONANT EXOPLANETS — BEST USE OF DATA AWARD (USA)
+Challenge: A World Away: Hunting for Exoplanets with AI.
+Offizieller Nachweis: NASA-Winner-Link oben.
+Fokus: Forschungsdatenanalyse und automatisches Erkennen möglicher
+Exoplanetenmerkmale.
+BEYOND.-Relevanz: GERING BIS MITTEL — wissenschaftliche Datenqualität.
+Repository: in der NASA-Quelle nicht verifiziert.
+
+ANDERER NASA-WETTBEWERB (NICHT SPACE APPS GLOBAL WINNER):
+NASA LunaRecycle, Digital-Twin-Kategorie 2025/2026.
+Offizielle Gewinnerübersicht:
+https://www.nasa.gov/prizes-challenges-and-crowdsourcing/centennial-challenges/winners/
+Beispiele: "Waste Parrot Technologies" (Best Visualization), "Terasynth",
+"Moon Made" und "RECLAIM". Thematisch interessante Digital-Twin-/3D-
+Visualisierung, aber nicht der gleiche Wettbewerb und nicht Landeplatzauswahl.
+
+======================================================================
+E. WISSENSCHAFTLICHE QUELLEN / NÜTZLICHE TOOLS
+======================================================================
+NASA Moon Trek: https://trek.nasa.gov/moon/
+LROC QuickMap: https://quickmap.lroc.asu.edu/
+JPL Horizons: https://ssd.jpl.nasa.gov/horizons/
+NAIF SPICE: https://naif.jpl.nasa.gov/naif/
+LOLA polar DEM / PGDA: https://pgda.gsfc.nasa.gov/products/78
+NASA Lunar CGI Moon Kit: https://svs.gsfc.nasa.gov/4720
+NASA Space Apps 2026 Challenge:
+https://www.spaceappschallenge.org/2026/challenges/lunar-landing-site-navigator/
+
+PRAXISFOLGERUNG FÜR BEYOND.
+(1) Das visuell starke 3D-EVA-/Rover-Erlebnis beibehalten.
+(2) Für Datum/Standort zusätzlich echte SPICE/JPL-Sonnen-/Erdgeometrie.
+(3) Lokale Horizontprofile aus DEM (mit Höhenauflösung/Unsicherheit).
+(4) Power-/Comms-Timeline und Multi-Site-Vergleich.
+(5) Landing-Bewertung mit Rasterauflösung, fehlenden Daten und
+    nicht erkannten Subpixel-Hazards kennzeichnen.
+(6) Klare Trennung: gemessene DEM-Topographie, abgeleitete
+    Sicht-/Steigungswerte, frei gestaltete 3D-Texturen/Steine.
+
+ENDE — Recherche am 15.11.2026. Links können sich während des Events ändern.
