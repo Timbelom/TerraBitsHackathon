@@ -10,6 +10,7 @@ import { createSearch } from './landing-search.js';
 import { createCards } from './landing-cards.js';
 import { createCompare } from './landing-compare.js';
 import { createSeries, windowFor } from './landing-series.js';
+import { createSky } from './landing-sky.js';
 import { createArea, LIMIT_MAX_H } from './landing-area.js';
 import { createExposure } from './landing-exposure.js';
 import { inertialSky, loadHorizons, onSkyChange, skySource, SOURCE_LABEL, SIDEREAL_DAYS, DAY_MS, MOON_RADIUS_KM, EARTH_RADIUS_KM, SUN_RADIUS_KM, AU_KM } from './core/sky.js';
@@ -700,16 +701,25 @@ function panelRect(el) {
 }
 let cardCount = 0, cardDiscR = 0;                 // for the zoom that makes room for the cards (render loop)
 const seriesToggle = document.getElementById('series-toggle');
-function showSeries(on) { series.show(on); seriesToggle.setAttribute('aria-pressed', on); }
+function showSeries(on) { if (on) showCompare(false); series.show(on); seriesToggle.setAttribute('aria-pressed', on); }
 seriesToggle.addEventListener('click', e => { e.preventDefault(); showSeries(seriesToggle.getAttribute('aria-pressed') !== 'true'); if (!expanded) expand(); });
 seriesToggle.addEventListener('keydown', e => { if (e.key === ' ') { e.preventDefault(); seriesToggle.click(); } });
+// Sky view (landing-sky.js): horizon, Sun and Earth of one marked point, through "Sky view" in the header.
+const skyToggle = document.getElementById('sky-toggle');
+function showSky(on) { if (on) showCompare(false); skyView.show(on); skyToggle.setAttribute('aria-pressed', on); }
+const skyView = createSky({ hero, marked: () => pins.marked(), picked: () => pins.picked, now: () => simMs, window: () => spanWindow, onClose: () => showSky(false),
+  ground: s => siteData.get(s, true), groundVersion: dataVersion, other: () => series.rect(), closeOther: () => showSeries(false) });
+skyToggle.addEventListener('click', e => { e.preventDefault(); showSky(skyToggle.getAttribute('aria-pressed') !== 'true'); if (!expanded) expand(); });
+skyToggle.addEventListener('keydown', e => { if (e.key === ' ') { e.preventDefault(); skyToggle.click(); } });
 let landAt = ms => setTime(ms);                       // a square of a card's delay row; replaced by the time bar block below, which also moves a set span
-const cards = createCards({ hero, pins, now: () => simMs, disc: () => moonDisc, avoid: () => [series.rect(), compare.rect(), panelRect(timebarEl), panelRect(legendBox)],
+const cards = createCards({ hero, pins, now: () => simMs, disc: () => moonDisc, avoid: () => [series.rect(), skyView.rect(), compare.rect(), panelRect(timebarEl), panelRect(legendBox)],
   ground: s => siteData.get(s, true), groundVersion: dataVersion, window: () => limitWindow, limits, onTerrain: s => openTerrain(s), setTime: ms => landAt(ms) });
 // Comparison (landing-compare.js): the numbers of the open cards side by side with a verdict. Shown only through "Compare" in the header.
 const compare = createCompare({ hero, marked: () => pins.marked(), metrics: () => cards.metrics(), limits, onClose: () => showCompare(false) });
 const compareToggle = document.getElementById('compare-toggle');
-function showCompare(on) { compare.show(on); compareToggle.setAttribute('aria-pressed', on); }
+// The panels never lie on top of each other: the comparison stands alone (opening it closes the two plots and the other way round);
+// the two plots stand side by side (landing-sky.js).
+function showCompare(on) { if (on) { showSeries(false); showSky(false); } compare.show(on); compareToggle.setAttribute('aria-pressed', on); }
 compareToggle.addEventListener('click', e => { e.preventDefault(); showCompare(compareToggle.getAttribute('aria-pressed') !== 'true'); if (!expanded) expand(); });
 
 // --- Lunar surface: relief mesh, surface modes, layers, legend ---------------------------
@@ -1018,6 +1028,7 @@ function frame(now) {
     if (Math.abs(moonDisc.r - cardDiscR) > .5) { cardDiscR = moonDisc.r; cards.relayout(); }
   }
   series.update();
+  skyView.update();
   compare.update();
   if (scope === 'terrain') {
     // Sun and Earth as the site sees them; light and shadows of the ground follow

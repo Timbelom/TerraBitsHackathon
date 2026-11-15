@@ -6,12 +6,14 @@
 <link rel="stylesheet" href="landing-cards.css?v=7">
 <link rel="stylesheet" href="landing-series.css?v=6">
 <link rel="stylesheet" href="landing-compare.css?v=1">
+<link rel="stylesheet" href="landing-sky.css?v=1">
 <link rel="stylesheet" href="landing-terrain.css?v=7">
 <script type="importmap">{"imports":{"three":"./vendor/three@0.169.0/build/three.module.js","three/addons/":"./vendor/three@0.169.0/examples/jsm/"}}</script></head><body>
 <div class="hero-world" id="world"><canvas id="moon-canvas" role="img" aria-label="3D view of the Moon with the Sun and the Earth; in the terrain view, the ground around the selected point"></canvas><div class="vignette"></div></div>
 <header class="site-header"><a href="./" class="wordmark">TERRABITS<span class="diamond">✦</span></a><form class="search" role="search" onsubmit="return false"><svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="4"/><path d="M9 9l3.2 3.2"/></svg><input type="text" id="search-input" role="combobox" aria-expanded="false" aria-controls="search-list" aria-autocomplete="list" aria-label="Search landing sites by name, or enter latitude, longitude in degrees" placeholder="Search landing site or enter lat, lon" autocomplete="off" spellcheck="false"><ul id="search-list" role="listbox" aria-label="Landing sites" hidden></ul></form><nav aria-label="Site navigation">
 <a href="#moon" data-enter>Explore</a>
 <a href="#" id="series-toggle" role="button" aria-pressed="false">Solar Elevation</a>
+<a href="#" id="sky-toggle" role="button" aria-pressed="false">Sky view</a>
 <a href="#" id="compare-toggle" role="button" aria-pressed="false">Compare</a>
 <a href="#contacts">Contacts</a>
 </nav></header>
@@ -36,4 +38,4 @@
 <section class="story" id="about"><div class="story-index">01 / THE MISSION</div><h2>Know the terrain.<br>Keep the signal.</h2><p>Compare landing sites on the Moon: where the Sun and the Earth stand above the real terrain horizon, for how long, and how that changes with the date. Built on NASA LOLA topography and JPL Horizons.</p><a href="#moon" data-enter class="underlink">Explore the Moon ↗</a></section>
 <section class="contacts" id="contacts" aria-label="TerraBits team"><div class="story-index">02 / THE PEOPLE</div><h2>Built by curiosity.</h2><p>We are motivated LMU and TUM students with a shared interest in technology and physics.</p><div class="people"><a href="https://www.linkedin.com/in/roman-belomutskiy-39a29737a/" target="_blank" rel="noopener noreferrer">Roman Belomutskiy <span>LinkedIn ↗</span></a><a href="https://www.linkedin.com/in/nakulan-s/" target="_blank" rel="noopener noreferrer">Nakulan S. <span>LinkedIn ↗</span></a><a href="https://www.linkedin.com/in/lennikolhoff/" target="_blank" rel="noopener noreferrer">Lenni Kolhoff <span>LinkedIn ↗</span></a><a href="https://www.linkedin.com/in/timur-belomutskiy-4b36b4255/" target="_blank" rel="noopener noreferrer">Timur Belomutskiy <span>LinkedIn ↗</span></a><span>Johannes Hille</span><span>Edgar Bunte</span></div></section>
 <footer><span>TERRABITS</span><span>Terrain: NASA LOLA (PGDA) · Sun and Earth: NASA JPL Horizons · Imagery: NASA SVS, LROC WAC · Sun: courtesy of NASA/SDO and the AIA, EVE, and HMI science teams</span></footer></main>
-<script type="module" src="landing.js?v=50"></script></body></html>
+<script type="module" src="landing.js?v=51"></script></body></html>
