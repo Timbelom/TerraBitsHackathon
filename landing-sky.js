@@ -97,8 +97,6 @@ export function createSky({ hero, marked, picked, now, window: timeWindow, onClo
     if (d && e.target === el) { e.preventDefault(); at.manual = true; moveTo(at.x + d[0], at.y + d[1]); }
   });
   const leftOf = () => hero.clientWidth >= MIN_W + LEFT + EDGE ? LEFT : EDGE;
-  /** Both panels side by side at their opening places: is there room for this one beside the other (rectangle o)? */
-  const fits = o => hero.clientWidth - leftOf() - 2 * EDGE - o.w >= MIN_W;
 
   const xOf = az => M.l + az / 360 * (W - M.l - M.r);
   const yOf = v => M.t + (data.hi - v) / (data.hi - data.lo) * (H - M.t - M.b);
@@ -190,18 +188,24 @@ export function createSky({ hero, marked, picked, now, window: timeWindow, onClo
     if (el.hidden !== !on) { el.hidden = !on; drawKey = ''; }
     if (!on) { hadOther = false; return; }
     // no room for both panels: the one opened last stays
-    if (o && (fresh || !hadOther) && !fits(o)) { if (fresh) closeOther?.(); else { hadOther = false; onClose?.(); return; } }
+    const left = leftOf(), hw = hero.clientWidth;
+    const roomL = o ? o.x - EDGE - left : 0, roomR = o ? hw - 2 * EDGE - (o.x + o.w) : 0;      // free width left and right of the other panel
+    if (o && (fresh || !hadOther) && Math.max(roomL, roomR) < MIN_W) { if (fresh) closeOther?.(); else { hadOther = false; onClose?.(); return; } }
+    if (o && at.manual && !grab && at.x < o.x + o.w && at.x + el.offsetWidth > o.x && at.y < o.y + o.h && at.y + el.offsetHeight > o.y) at.manual = false;   // never on top of each other
     fresh = false; hadOther = !!o;
     const pk = picked?.() ?? null;
     if (pk !== lastPicked) { lastPicked = pk; chosen = null; }
     const site = all.find(s => String(s.id) === String(chosen)) ?? all.find(s => s.id === pk) ?? all[0];
     el.classList.toggle('empty', !site);
-    // Opening place: top right like the time series; while that panel stands in the right half, top left beside it
+    // Opening place: top right like the time series; while that panel is shown, beside it on the side with more room
     let home = Infinity;
     if (!at.manual) {
-      const hw = hero.clientWidth, left = leftOf();
       let w = Math.min(MAX_W, hw - left - EDGE);
-      if (o && o.x + o.w / 2 > hw / 2) { home = left; if (o.x - EDGE - left >= MIN_W) w = Math.min(w, o.x - EDGE - left); }
+      if (o) {
+        const room = Math.max(roomL, roomR);
+        if (room < MIN_W) { hadOther = false; onClose?.(); return; }      // the other panel was moved or the window narrowed: this one gives way
+        if (roomL > roomR) home = left; w = Math.min(w, room);
+      }   // on the side with more room, no wider than it
       el.style.width = Math.max(Math.min(MIN_W, hw - 2 * EDGE), w) + 'px';
     }
     if (!site) { data = null; dataKey = drawKey = ''; timeEl.textContent = ''; if (at.manual) moveTo(at.x, at.y); else moveTo(home, TOP); return; }
