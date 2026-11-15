@@ -702,8 +702,9 @@ const seriesToggle = document.getElementById('series-toggle');
 function showSeries(on) { series.show(on); seriesToggle.setAttribute('aria-pressed', on); }
 seriesToggle.addEventListener('click', e => { e.preventDefault(); showSeries(seriesToggle.getAttribute('aria-pressed') !== 'true'); if (!expanded) expand(); });
 seriesToggle.addEventListener('keydown', e => { if (e.key === ' ') { e.preventDefault(); seriesToggle.click(); } });
+let landAt = ms => setTime(ms);                       // a square of a card's delay row; replaced by the time bar block below, which also moves a set span
 const cards = createCards({ hero, pins, now: () => simMs, disc: () => moonDisc, avoid: () => [series.rect(), panelRect(timebarEl), panelRect(legendBox)],
-  ground: s => siteData.get(s, true), groundVersion: dataVersion, window: () => limitWindow, limits, onTerrain: s => openTerrain(s) });
+  ground: s => siteData.get(s, true), groundVersion: dataVersion, window: () => limitWindow, limits, onTerrain: s => openTerrain(s), setTime: ms => landAt(ms) });
 
 // --- Lunar surface: relief mesh, surface modes, layers, legend ---------------------------
 // "Surface" of the sidebar chooses what the ground shows; the layers lie over it. The same choice holds in
@@ -1126,6 +1127,16 @@ requestAnimationFrame(frame);
     stopMs = loop ? b : Infinity; loopMs = a || simMs;
     if (a && (jump || (loop && (simMs < a || simMs >= b)))) setTime(a);
   }
+  // A landing date chosen in a card's delay row. With a span set, Start and Stop move there together (same length), so the
+  // cards show that mission and the clock stays inside its span; with none the clock jumps.
+  landAt = ms => {
+    if (!(stopMs < Infinity)) return setTime(ms);
+    const len = stopMs - loopMs, put = (t, dateId, timeId) => {
+      const iso = new Date(t).toISOString(), time = document.getElementById(timeId);
+      document.getElementById(dateId).value = iso.slice(0, 10); time.value = !time.value && iso.slice(11, 16) === '00:00' ? '' : iso.slice(11, 16);
+    };
+    put(ms, 'p-from', 'p-from-time'); put(ms + len, 'p-to', 'p-to-time'); readSpan(true);
+  };
   document.getElementById('p-clear').addEventListener('click', () => {
     ['p-from', 'p-from-time', 'p-to', 'p-to-time'].forEach(id => { document.getElementById(id).value = ''; });
     readSpan(false);

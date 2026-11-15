@@ -5,7 +5,12 @@
 //     that direction, visible share of the disc, time until it next passes 50 % (rise or set)
 //   the time span (Start to Stop, or the next 24 h when none is set): share of the hours with the Sun and with
 //     the Earth in view, the longest stretch without each, against the limits of the sidebar that are set
-//   what the numbers rest on: sky source and ground (5 m site profile, LDEM64 block, global grid, smooth sphere)
+//   what the numbers rest on: the ground line under the coordinates (5 m site profile, LDEM64, global grid, smooth sphere)
+//   the delay row: 30 squares for the landing delayed by 0 to 29 days (core/delay.js), filled where the limits
+//     that are set hold over the whole mission, and one sentence with the days of delay the site tolerates.
+//     The mission is the time span (landing = Start, length = Stop - Start); with no span set it lands at the
+//     simulated time (to the hour) and lasts 10 days. A click on a square moves the landing to that day (setTime).
+//     On coarse ground the squares are hatched and the sentence says so instead of naming a number of days.
 // All values come from core/visibility.js with the horizon that ui/site-data.js has for the point; when
 // better ground arrives (a terrain block has loaded) the numbers are redone. Several cards can be open to
 // compare sites. "View terrain" opens the terrain view around the point.
@@ -19,6 +24,7 @@
 // (a card that was not moved by hand then looks for its place again).
 import { siteSky, DAY_MS } from './core/sky.js';
 import { siteState, nextChange, spanMetrics, basisLabel, IN_VIEW, HOUR_MS } from './core/visibility.js';
+import { delayTable, delayVerdict, delayText, delayStep, DELAY_DAYS, DEFAULT_MISSION_MS } from './core/delay.js';
 import { coordText } from './landing-pins.js';
 
 // Rise and set (the disc passing 50 %) are searched hourly for 60 days, then in 6 h steps up to 19 years (one
@@ -38,17 +44,24 @@ const point = p => Math.abs(p[0]).toFixed(1) + '° ' + (p[0] < 0 ? 'S' : 'N') + 
 const angle = d => (d < 0 ? '−' : '+') + Math.abs(d).toFixed(1) + '°';
 const span = ms => { const h = Math.floor(ms / HOUR); return Math.floor(h / 24) + ' d ' + h % 24 + ' h'; };
 const day = ms => new Date(ms).toISOString().slice(0, 10);
+const stamp = ms => new Date(ms).toISOString().slice(0, 16).replace('T', ' ');
 // The ground line of a card: what the horizon of the point rests on, in a few words (the full name is its title).
 // The global grid and the smooth sphere are coarse: they miss the nearby relief that decides rise and set.
 const GROUND = { profile: '5 m site profile', block: 'LDEM64', globe: 'global grid, 7.6 km', smooth: 'smooth sphere' };
 const isCoarse = basis => basis === 'globe' || basis === 'smooth';
+// The delay row: one button per day of delay; the arrow keys move along the row, so a card adds one tab stop.
+const DELAY = '<div class="card-delay"><div class="card-delay-days" role="group" aria-label="Landing delayed by 0 to ' + (DELAY_DAYS - 1) + ' days">'
+  + Array.from({ length: DELAY_DAYS }, (_, k) => '<button type="button" class="card-day" data-k="' + k + '" tabindex="' + (k ? -1 : 0) + '"></button>').join('') + '</div><p class="card-delay-text"><span></span><b></b></p></div>';
+const hours = (h, open) => (open ? '≥ ' : '') + (h < 100 ? h.toFixed(1) : Math.round(h)) + ' h';
+const length = ms => ms % DAY_MS ? ms < DAY_MS ? +(ms / HOUR).toFixed(1) + ' h' : span(ms) : ms / DAY_MS + ' d';   // mission length: "10 d", "9 d 12 h", "6 h"
 const groundName = g => g.basis === 'block' && Math.abs((g.horizon?.pixelM ?? 473.8) - 473.8) > 5 ? basisLabel('block', g.horizon.pixelM) : GROUND[g.basis];
 
 /** hero: the hero element (cards live in it); pins: createPins api; now(): simulated UTC ms; disc(): Moon on screen {x, y, r} in hero px;
  *  avoid(): rectangles {x, y, w, h} in hero px the cards keep clear of (time series panel, time bar, legend), nulls allowed;
  *  ground(site): the point for the calculation, from ui/site-data.js get(site, true); groundVersion(): changes when any ground changed;
- *  window(): { a, b, free } the UTC span the metrics cover (free: the 24 h from the simulated time); limits(): { dark, dte } in hours, null = off; onTerrain(site): "View terrain" was pressed. */
-export function createCards({ hero, pins, now, disc, avoid, ground, groundVersion, window: spanWindow, limits, onTerrain }) {
+ *  window(): { a, b, free } the UTC span the metrics cover (free: the 24 h from the simulated time); limits(): { dark, dte } in hours, null = off; onTerrain(site): "View terrain" was pressed;
+ *  setTime(ms): a square of the delay row was pressed, the landing moves to that UTC time. */
+export function createCards({ hero, pins, now, disc, avoid, ground, groundVersion, window: spanWindow, limits, onTerrain, setTime }) {
   const NS = 'http://www.w3.org/2000/svg';
   const lines = document.createElementNS(NS, 'svg'); lines.setAttribute('class', 'card-lines'); lines.setAttribute('aria-hidden', 'true');
   const root = document.createElement('div'); root.className = 'cards';
@@ -145,7 +158,7 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
 
   function open(s) {
     const el = document.createElement('section'); el.className = 'card'; el.tabIndex = 0;
-    el.innerHTML = '<header><input type="text" class="card-name" aria-label="Name of this point" autocomplete="off" spellcheck="false"><button type="button" class="card-close" aria-label="Close">' + CLOSE_SVG + '</button></header><p class="card-sub"></p><p class="card-ground" data-f="ground"></p>' + ROWS + '<button type="button" class="card-terrain">View terrain</button>';
+    el.innerHTML = '<header><input type="text" class="card-name" aria-label="Name of this point" autocomplete="off" spellcheck="false"><button type="button" class="card-close" aria-label="Close">' + CLOSE_SVG + '</button></header><p class="card-sub"></p><p class="card-ground" data-f="ground"></p>' + ROWS + DELAY + '<button type="button" class="card-terrain">View terrain</button>';
     el.querySelector('.card-terrain').addEventListener('click', () => onTerrain?.(s));
     const nameEl = el.querySelector('.card-name'), sub = el.querySelector('.card-sub'), base = s.base ??= s.name;
     const label = () => {
@@ -162,6 +175,12 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
     const line = document.createElementNS(NS, 'polyline'); lines.append(line);
     const c = { site: s, el, line, f: {}, shown: {}, tones: {}, rows: {}, next: {}, over: {}, gv: -1, mKey: '', m: null, x: 0, y: 0, tx: 0, ty: 0, w: 0, h: 0 };
     el.querySelectorAll('[data-f]').forEach(n => { c.f[n.dataset.f] = n; });
+    c.delay = el.querySelector('.card-delay'); c.days = [...el.querySelectorAll('.card-day')];
+    c.delay.addEventListener('click', e => { const b = e.target.closest('.card-day'); if (b && c.d) setTime?.(c.d.landingMs + b.dataset.k * DAY_MS); });
+    c.delay.addEventListener('keydown', e => {
+      const k = c.days.indexOf(e.target), to = c.days[k + ({ ArrowLeft: -1, ArrowRight: 1 }[e.key] ?? 0)];
+      if (k >= 0 && to && to !== e.target) { e.preventDefault(); e.target.tabIndex = -1; to.tabIndex = 0; to.focus(); }
+    });
     root.append(el); fill(c, now());
     c.w = el.offsetWidth; c.h = el.offsetHeight;
     cards.set(s.id, c); pins.cards.add(s.id); c.fresh = true; relayout();
@@ -196,7 +215,7 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
   function fill(c, ms) {
     const { lat, lon } = c.site, g = ground(c.site), site = g.site, k = siteState(ms, site, st), sub = siteSky(ms, lat, lon);
     const gv = groundVersion();
-    if (c.gv !== gv) { c.gv = gv; c.next = {}; c.mKey = ''; }                 // the ground changed: rise, set and span numbers are redone
+    if (c.gv !== gv) { c.gv = gv; c.next = {}; c.mKey = ''; c.dKey = ''; }    // the ground changed: rise, set, span and delay numbers are redone
     set(c, 'sunSub', point(sub.subSolar)); set(c, 'earthSub', point(sub.subEarth));
     // what the numbers rest on; when better ground has arrived the line is marked for a moment
     const groundKey = g.basis + '|' + (g.horizon?.pixelM ?? '');
@@ -236,6 +255,34 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
       tone(c, id + 'Gap', limit == null ? '' : over ? 'bad' : 'good');
       if (c.over[id] !== over) { c.over[id] = over; c.f[id + 'Gap'].title = over ? 'Longer than the limit set in the sidebar' : ''; }
     }
+    // the delay row: the table once per landing, mission and ground (a new card at once, otherwise one card per frame, see update()); the limits only colour it
+    c.dWant = w.a + '|' + (w.free ? DEFAULT_MISSION_MS : w.b - w.a);
+    if (!c.d) delay(c);
+    paintDelay(c, g.basis, lim);
+  }
+  /** The delay table of a card for the landing and mission its key names. */
+  function delay(c) {
+    const [a, len] = c.dWant.split('|').map(Number);
+    c.dKey = c.dWant; c.d = delayTable(ground(c.site).site, a, len, delayStep(len)); c.dN = (c.dN ?? 0) + 1;
+  }
+  /** Squares and sentence of the delay row from the table, the limits and the kind of ground; redone only when one of them changed. */
+  function paintDelay(c, basis, lim) {
+    const t = c.d, coarse = isCoarse(basis), key = c.dN + '|' + lim.dark + '|' + lim.dte + '|' + coarse;
+    if (c.dShown === key) return; c.dShown = key;
+    const v = delayVerdict(t, lim), [lead, text] = c.delay.lastChild.children, dur = length(t.missionMs);
+    c.delay.classList.toggle('coarse', coarse); c.delay.firstChild.hidden = !v;
+    c.verdict = v && !coarse ? v : null;
+    lead.textContent = v ? dur + ' mission: ' : '';
+    text.textContent = !v ? 'Set a limit in the sidebar to see how much delay this site tolerates.' : coarse ? 'coarse ground, open the terrain for a reliable answer' : delayText(v);
+    text.className = !v || coarse || v.holds === 0 ? 'plain' : v.holds < 0 ? 'bad' : 'good';   // no slack at all is neither in the site's favour nor against it
+    c.delay.title = 'Landing ' + stamp(t.landingMs) + ' UTC, delayed by 0 to ' + (t.days - 1) + ' days; mission of ' + dur + '. A day holds when the limits set in the sidebar are kept over the whole mission.'
+      + (t.stepMs > HOUR ? ' Sampled every ' + t.stepMs / HOUR + ' h.' : '');
+    if (!v) return;
+    c.days.forEach((b, k) => {
+      const say = '+' + k + ' d, landing ' + stamp(t.landingMs + k * DAY_MS) + ' UTC: longest darkness ' + hours(t.dark[k], t.darkOpen[k]) + ', longest DTE outage ' + hours(t.outage[k], t.outageOpen[k])
+        + (v.ok[k] ? ', within the limits' : ', over a limit');
+      b.classList.toggle('bad', !v.ok[k]); b.title = say; b.setAttribute('aria-label', say);
+    });
   }
 
   // Docked: in the terrain view there is no Moon to stand beside. Only the card of that site is shown, top left,
@@ -290,6 +337,8 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
     if (!cards.size) return;
     const t = performance.now(), refresh = t - lastFill > REFRESH_MS, ms = now();
     if (refresh) lastFill = t;
+    // delay tables that are out of date (landing, mission or ground changed): one card per frame, so many cards do not hold up a frame
+    for (const c of cards.values()) if (!c.el.hidden && c.d && c.dKey !== c.dWant) { delay(c); paintDelay(c, ground(c.site).basis, limits()); break; }
     if (docked) {
       const c = cards.get(docked); if (!c) return;
       if (c.el.hidden) { c.el.hidden = false; fill(c, ms); }
