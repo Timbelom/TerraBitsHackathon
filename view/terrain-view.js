@@ -25,6 +25,9 @@ const SOLAR_CONSTANT = 1361;                 // W/m2 at 1 au
 // (the square is 200 km wide). Their directions are true; their distance and size are not: both are drawn
 // BODY_EXAG times larger than in the system view, the Earth still about 3.7 times as wide as the Sun.
 const SKY_KM = 170, BODY_EXAG = 1.5;
+// The Sun and its path are drawn further out than the Earth and its path (directions unchanged, the Sun's disc
+// scaled with the distance), so the two bodies do not run into each other where their directions meet.
+const SUN_KM = SKY_KM * 1.4;
 const PATH_COLORS = { sun: 0xd9b377, earth: 0x7fb0e0 };   // as the paths of the system view
 // The far grid ends 300 km out. Seen from the site the sphere's surface there lies 4.9 deg below the
 // horizontal; a Sun lower than that would shine in under the edge of the data. The light is faded out
@@ -327,7 +330,7 @@ export function createTerrainView({ renderer, input }) {
   function setSky(sunENU, earthENU) {
     sunDir.set(sunENU[0], sunENU[2], -sunENU[1]);
     const top = pin.position.y + RECEIVER_HEIGHT_M / 1000;
-    if (sunObj) { sunObj.position.copy(sunDir).multiplyScalar(SKY_KM); sunObj.position.y += top; }
+    if (sunObj) { sunObj.position.copy(sunDir).multiplyScalar(SUN_KM); sunObj.position.y += top; }
     earthDir.set(earthENU[0], earthENU[2], -earthENU[1]);
     if (earthObj) { earthObj.position.copy(earthDir).multiplyScalar(SKY_KM); earthObj.position.y += top; }
     sunPath.position.y = earthPath.position.y = top;
@@ -356,7 +359,7 @@ export function createTerrainView({ renderer, input }) {
   /** The page's Sun and Earth objects come over for as long as the view is open; scale: world size factor for each. */
   function adopt(sun, earth, sunK, earthK) {
     sunObj = sun; earthObj = earth; sunScale = sun.scale.x; earthScale = earth.scale.x;
-    sky.add(sun, earth); sun.scale.setScalar(sunK * BODY_EXAG); earth.scale.setScalar(earthK * BODY_EXAG);
+    sky.add(sun, earth); sun.scale.setScalar(sunK * BODY_EXAG * SUN_KM / SKY_KM); earth.scale.setScalar(earthK * BODY_EXAG);
   }
   /**
    * The paths of Sun and Earth across the site's sky: arrays of unit vectors [east, north, up] in time order
@@ -364,8 +367,8 @@ export function createTerrainView({ renderer, input }) {
    */
   function setPaths(sunENU, earthENU) {
     for (const [line, pts] of [[sunPath, sunENU], [earthPath, earthENU]]) {
-      const a = new Float32Array(pts.length * 3);
-      pts.forEach((v, i) => { a[i * 3] = v[0] * SKY_KM; a[i * 3 + 1] = v[2] * SKY_KM; a[i * 3 + 2] = -v[1] * SKY_KM; });
+      const a = new Float32Array(pts.length * 3), r = line === sunPath ? SUN_KM : SKY_KM;
+      pts.forEach((v, i) => { a[i * 3] = v[0] * r; a[i * 3 + 1] = v[2] * r; a[i * 3 + 2] = -v[1] * r; });
       line.geometry.dispose(); line.geometry = new THREE.BufferGeometry(); line.geometry.setAttribute('position', new THREE.BufferAttribute(a, 3));
       line.visible = pathsOn && pts.length > 1;
     }

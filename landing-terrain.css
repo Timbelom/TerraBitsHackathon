@@ -84,3 +84,8 @@ body.expanded .timebar,body.terrain .timebar{display:flex}
 /* Where the window is too narrow for time bar and legend side by side, the legend stands above the bar */
 @media(max-width:1740px){body.expanded .legend,body.terrain .legend{bottom:calc(var(--s5) + 184px)}}
 @media(prefers-reduced-motion:reduce){#tb-scrub::-webkit-slider-thumb{transition:none}}
+/* Sun and Earth outside the picture: a label at the edge of the scene with an arrow towards the body (landing.js).
+   Same surface as the hover box; under the panels, never in the way of the pointer. */
+.offscreen{position:absolute;left:0;top:0;z-index:3;display:flex;align-items:center;gap:var(--s2);padding:var(--s1) var(--s3);background:var(--surface);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);border:1px solid var(--line);border-radius:var(--r-outer);color:var(--text);font:500 14px/1.5 var(--font-ui);white-space:nowrap;pointer-events:none}
+.offscreen[hidden],.entering .offscreen{display:none}
+.offscreen svg{flex:none;width:14px;height:14px}

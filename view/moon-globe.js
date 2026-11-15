@@ -10,7 +10,8 @@
 //   imagery    the same with the albedo map of the page (LROC WAC mosaic)
 //   elevation  height above the reference sphere in colour (not shaded: the colours are the legend's)
 //   sunlight, earth   a value grid in colour (setValues), e.g. the mean illumination of a year
-// Layers: latitude/longitude grid every 30 deg, contour lines (elevation mode), the 200 km squares.
+// Layers: latitude/longitude grid every 30 deg, contour lines (elevation mode), the 200 km squares, and the area
+// within the limits of the sidebar (setArea), which lies over every surface mode.
 import * as THREE from 'three';
 import { MOON_RADIUS_KM, RAD, squares as makeSquares, squareAt, unitFromLatLon, localKmToUnit, bodyToThree } from '../core/frames.js';
 import { VIRIDIS, colorAt } from './colors.js';
@@ -78,12 +79,34 @@ export function createMoonGlobe({ grid, radius, albedo = null, detail = 1 }) {
   // Shadows: where the skyline map (setHorizon) is there, the Sun's light is scaled per fragment by the Sun's
   // elevation against the terrain skyline; the shadow map of the page's light is then not used for the Moon.
   const horizon = { uHorizon: { value: null }, uHorizonOn: { value: 0 }, uSunObj: { value: new THREE.Vector3(1, 0, 0) }, uHorizonMin: { value: -6 }, uHorizonSpan: { value: 36 } };
+  // The area within the limits of the sidebar (core/area.js): a mask per 0.5 deg cell, laid over whatever the surface
+  // shows. Inside, the ground is tinted and the outline drawn; outside, it is dimmed. Colours are display values.
+  const area = { uArea: { value: null }, uAreaOn: { value: 0 }, uAreaColor: { value: new THREE.Vector3(.435, .839, .627) } };   // --good of tokens.css
+  const withArea = material => {
+    const before = material.onBeforeCompile, key = material.customProgramCacheKey;
+    material.onBeforeCompile = (shader, renderer) => {
+      before?.call(material, shader, renderer);
+      Object.assign(shader.uniforms, area);
+      shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vAreaObj;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvAreaObj = position;');
+      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vAreaObj;\nuniform sampler2D uArea; uniform float uAreaOn; uniform vec3 uAreaColor;')
+        .replace('#include <colorspace_fragment>', `#include <colorspace_fragment>
+if (uAreaOn > .5) {
+  vec3 an = normalize(vAreaObj);
+  float av = texture2D(uArea, vec2(atan(-an.z, an.x) / 6.2831853 + .5, asin(clamp(an.y, -1., 1.)) / 3.14159265 + .5)).r;
+  float aw = max(fwidth(av), 1e-4), inside = smoothstep(.5 - aw, .5 + aw, av), line = 1. - smoothstep(.8, 1.8, abs(av - .5) / aw);
+  gl_FragColor.rgb = mix(gl_FragColor.rgb * mix(.6, 1., inside), uAreaColor, .3 * inside);
+  gl_FragColor.rgb = mix(gl_FragColor.rgb, uAreaColor, .9 * line);
+}`);
+    };
+    material.customProgramCacheKey = () => (key ? key.call(material) : 'basic') + '-area';
+    return material;
+  };
   const materials = {
     // The lit surfaces carry the relief shading, and their brightness is bent so the ground under a high Sun does
     // not burn out to white and its craters stay readable (COMPRESS, see view/relief.js).
-    relief: shadeMaterial(new THREE.MeshStandardMaterial({ color: 0xc2c6cc, roughness: .96, metalness: 0, ...offset }), { compress: COMPRESS, horizon }),
-    imagery: shadeMaterial(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, metalness: 0, map: albedo, ...offset }), { compress: COMPRESS, horizon }),
-    data: new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, ...offset }),
+    relief: withArea(shadeMaterial(new THREE.MeshStandardMaterial({ color: 0xc2c6cc, roughness: .96, metalness: 0, ...offset }), { compress: COMPRESS, horizon })),
+    imagery: withArea(shadeMaterial(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, metalness: 0, map: albedo, ...offset }), { compress: COMPRESS, horizon })),
+    data: withArea(new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, ...offset })),
   };
   const mesh = new THREE.Mesh(geometry, materials.relief);
   mesh.castShadow = mesh.receiveShadow = true;
@@ -137,6 +160,17 @@ export function createMoonGlobe({ grid, radius, albedo = null, detail = 1 }) {
     t.wrapS = t.wrapR = THREE.RepeatWrapping; t.wrapT = THREE.ClampToEdgeWrapping; t.unpackAlignment = 1; t.needsUpdate = true;
     horizon.uHorizon.value = t; horizon.uHorizonMin.value = meta.min_deg; horizon.uHorizonSpan.value = meta.span_deg; horizon.uHorizonOn.value = 1;
     mesh.castShadow = mesh.receiveShadow = false;
+  }
+  /** The area within the limits: one byte per cell (above 127 = within; row 0 = southernmost, column 0 = longitude -180), or null for none. */
+  function setArea(mask, width, heightCells) {
+    if (!mask) { area.uAreaOn.value = 0; return; }
+    let t = area.uArea.value;
+    if (!t || t.image.width !== width || t.image.height !== heightCells) {
+      t?.dispose();
+      t = area.uArea.value = new THREE.DataTexture(new Uint8Array(width * heightCells), width, heightCells, THREE.RedFormat, THREE.UnsignedByteType);
+      t.minFilter = t.magFilter = THREE.LinearFilter; t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.ClampToEdgeWrapping; t.unpackAlignment = 1;
+    }
+    t.image.data.set(mask); t.needsUpdate = true; area.uAreaOn.value = 1;
   }
   /** Unit vector to the Sun in the Moon's own axes of the mesh (x = lon 0, y = north, z = lon 90 W). */
   function setSun(v) { horizon.uSunObj.value.copy(v); }
@@ -242,12 +276,12 @@ export function createMoonGlobe({ grid, radius, albedo = null, detail = 1 }) {
   }
 
   function dispose() {
-    geometry.dispose(); Object.values(materials).forEach(m => m.dispose());
+    geometry.dispose(); Object.values(materials).forEach(m => m.dispose()); area.uArea.value?.dispose();
     group.traverse(o => { if (o !== mesh && o.geometry) { o.geometry.dispose(); o.material.dispose(); } });
   }
   return {
     group, mesh, detail, triangles: idx.length / 3, range: { minM, maxM },
-    setMode, get mode() { return mode; }, setAlbedo, setHorizon, setSun, get hasHorizon() { return horizon.uHorizonOn.value > 0; }, setValues, valueAt, hasLayer: name => layers.has(name),
+    setMode, get mode() { return mode; }, setAlbedo, setHorizon, setSun, get hasHorizon() { return horizon.uHorizonOn.value > 0; }, setValues, valueAt, hasLayer: name => layers.has(name), setArea,
     setGraticule: on => { graticule.visible = on; }, setSquares, markSquare, setContours,
     squareAt: (latDeg, lonDeg) => squareAt(squareList, unitFromLatLon(latDeg, lonDeg)), squares: squareList,
     raycast, dispose,

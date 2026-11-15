@@ -9,6 +9,11 @@ with the date: sunlight for power, Earth in view for direct radio contact.
 - **Info card** per marked point: elevation of the Sun and the Earth, height of the horizon in that direction,
   visible share of each disc, time to the next rise or set, and for the chosen time span the share of hours
   in view and the longest darkness and longest outage of direct-to-Earth contact, compared with two limits.
+- **Limits as an area on the Moon.** "Max. darkness" and "Max. DTE outage" in the sidebar are off at the start.
+  Set one and the part of the Moon that stays within it is marked on the globe; set both and the part within both
+  is marked (the intersection). Time window: Start to Stop, or the next 24 hours from the simulated time when no
+  span is set. The info cards compare the limits over the same window. Calculated per 0.5 degree cell on the
+  7.6 km skyline map (`core/area.js`), so it shows the large shapes; a marked point's card uses finer ground.
 - **Terrain view** ("View terrain" on a card): the ground 200 x 200 km around the point in true proportions,
   lit and shadowed by the Sun as it stands there, with values for the point under the pointer.
 - **Surfaces and layers:** relief with shadows, imagery, elevation, mean sunlight and Earth visibility of a

@@ -2,7 +2,7 @@
    Same surface as the parameter sidebar. One surface per card; the groups (Sun, Earth, time span) are
    separated by spacing. A thin line joins each card to its marker. */
 .card-lines{position:absolute;inset:0;width:100%;height:100%;z-index:2;overflow:hidden;pointer-events:none}
-.card-lines line{stroke:var(--text);stroke-opacity:.34;stroke-width:1}
+.card-lines polyline{fill:none;stroke:var(--text);stroke-opacity:.34;stroke-width:1;stroke-linejoin:round}
 .cards{position:absolute;inset:0;z-index:4;overflow:hidden;pointer-events:none;font-family:var(--font-ui)}
 .entering .cards,.entering .card-lines{display:none}
 /* Sized to be read at a glance beside the scene: 16 px rows, labels and values in full text colour

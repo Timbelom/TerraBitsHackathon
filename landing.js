@@ -9,11 +9,12 @@ import { createPins } from './landing-pins.js';
 import { createSearch } from './landing-search.js';
 import { createCards } from './landing-cards.js';
 import { createSeries, windowFor } from './landing-series.js';
+import { createArea, LIMIT_MAX_H } from './landing-area.js';
 import { inertialSky, loadHorizons, onSkyChange, skySource, SOURCE_LABEL, SIDEREAL_DAYS, DAY_MS, MOON_RADIUS_KM, EARTH_RADIUS_KM, SUN_RADIUS_KM, AU_KM } from './core/sky.js';
 import { TerrainSource, GlobeGrid } from './core/terrain.js';
 import { createSiteData } from './ui/site-data.js';
 import { createMoonGlobe } from './view/moon-globe.js';
-import { createTerrainView } from './view/terrain-view.js?v=2';
+import { createTerrainView } from './view/terrain-view.js?v=3';
 import { VIRIDIS, INFERNO, CIVIDIS, cssGradient } from './view/colors.js';
 import { siteState, makeSite, skylineFromGlobe, discFraction, SUN_RADIUS_DEG, basisLabel } from './core/visibility.js';
 import { RAD, basisAt, bodyToThree, coordLabel } from './core/frames.js';
@@ -598,14 +599,22 @@ const globeReady = GlobeGrid.load().then(g => { siteData.setGlobe(g); return g; 
 globeReady.catch(err => console.warn('Global height grid not loaded:', err.message));
 // The span the numbers cover: Start to Stop of the sidebar, or two lunar days from the simulated time (paged on by
 // one with the clock). One window for the cards and the plot.
-let spanAnchor = null, spanWindow = null;
+// The two limits are judged over their own window (limitWindow): Start to Stop as well, but with no span set the
+// 24 hours from the simulated time (to the hour). Info cards and the area on the Moon (landing-area.js) share it.
+let spanAnchor = null, spanWindow = null, limitWindow = null;
 function updateWindow() {
   const fixed = stopMs < Infinity;
   spanWindow = windowFor(fixed ? [loopMs, stopMs] : null, simMs, spanAnchor); spanAnchor = spanWindow.anchor; spanWindow.free = !fixed;
+  const a = fixed ? loopMs : Math.floor(simMs / 3600000) * 3600000, b = fixed ? stopMs : a + 24 * 3600000;
+  if (!limitWindow || limitWindow.a !== a || limitWindow.b !== b) limitWindow = { a, b, free: !fixed };
 }
 updateWindow();
+// A slider at its right end (one step past LIMIT_MAX_H) is off: no limit. Both start there.
 const limitInputs = { dark: document.getElementById('p-dark'), dte: document.getElementById('p-dte') };
-const limits = () => ({ dark: +limitInputs.dark.value, dte: +limitInputs.dte.value });
+const limitOf = input => +input.value > LIMIT_MAX_H ? null : +input.value;
+const limits = () => ({ dark: limitOf(limitInputs.dark), dte: limitOf(limitInputs.dte) });
+const area = createArea({ window: () => limitWindow, limits, skyVersion: () => skyVersion, note: document.getElementById('p-area-note'),
+  apply: (mask, w, h) => globe?.setArea(mask, w, h) });
 
 // Landing-site pins (landing-pins.js): an HTML layer over the canvas, switched by "historical" in the sidebar.
 const pins = createPins({ root: document.getElementById('pins'), hero, moon, pivot, camera, R });
@@ -615,13 +624,51 @@ const pins = createPins({ root: document.getElementById('pins'), hero, moon, piv
 const series = createSeries({ hero, marked: () => pins.marked(), now: () => simMs, window: () => spanWindow,
   setTime: ms => setTime(ms), onClose: () => showSeries(false),
   ground: s => siteData.get(s), groundVersion: dataVersion });
+// Where the Sun and the Earth are while they are outside the picture: a small label at the edge of the scene, on the
+// line from the middle of the scene towards the body, with an arrow in that direction. System view and terrain view.
+const ARROW_SVG = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 7h10M8 3l4 4-4 4"/></svg>';
+const pointers = [[sun, 'Sun'], [earth, 'Earth']].map(([obj, name]) => {
+  const el = document.createElement('div'); el.className = 'offscreen'; el.hidden = true; el.setAttribute('aria-hidden', 'true');
+  el.innerHTML = ARROW_SVG + '<span>' + name + '</span>'; hero.append(el);
+  return { obj, el, arrow: el.firstChild, w: 0, h: 0 };
+});
+const ptWorld = new THREE.Vector3(), ptCam = new THREE.Vector3();
+function pointToBodies() {
+  const show = (expanded || scope === 'terrain') && !zoom && !busy, cam = scope === 'terrain' ? terrain.camera : camera;
+  const L = sideNow, Rt = bufW, cx = (L + Rt) / 2, cy = bufH / 2;
+  for (const p of pointers) {
+    let off = false, dx = 0, dy = -1;
+    if (show) {
+      p.obj.getWorldPosition(ptWorld); ptCam.copy(ptWorld).applyMatrix4(cam.matrixWorldInverse); ptWorld.project(cam);
+      const x = (ptWorld.x + 1) / 2 * bufW, y = (1 - ptWorld.y) / 2 * bufH, front = ptCam.z < 0;
+      off = !front || x < L || x > Rt || y < 0 || y > bufH;
+      if (front) { dx = x - cx; dy = y - cy; } else if (ptCam.x || ptCam.y) { dx = ptCam.x; dy = -ptCam.y; }   // behind the camera: the side it is on
+    }
+    if (p.el.hidden === off) { p.el.hidden = !off; if (off) { p.w = p.el.offsetWidth; p.h = p.el.offsetHeight; } }
+    if (!off) continue;
+    const n = Math.hypot(dx, dy) || 1; dx /= n; dy /= n;
+    // the label's centre stays inside this box: clear of the sidebar, the header and the time bar
+    const x0 = L + 16 + p.w / 2, x1 = Rt - 16 - p.w / 2, y0 = 93 + p.h / 2, y1 = bufH - 200 - p.h / 2;
+    const my = (y0 + y1) / 2;
+    const t = Math.min(dx > 0 ? (x1 - cx) / dx : dx < 0 ? (x0 - cx) / dx : Infinity, dy > 0 ? (y1 - my) / dy : dy < 0 ? (y0 - my) / dy : Infinity);
+    p.el.style.transform = 'translate(' + Math.round(cx + dx * t - p.w / 2) + 'px,' + Math.round(my + dy * t - p.h / 2) + 'px)';
+    p.arrow.style.transform = 'rotate(' + (Math.atan2(dy, dx) * 180 / Math.PI).toFixed(0) + 'deg)';
+  }
+}
+// Panels the info cards keep clear of, as rectangles in hero px (null while a panel is not shown)
+const timebarEl = document.getElementById('timebar'), legendBox = document.getElementById('legend');
+function panelRect(el) {
+  if (!el || el.hidden || !el.offsetWidth) return null;
+  const r = el.getBoundingClientRect(), h = hero.getBoundingClientRect();
+  return { x: r.left - h.left, y: r.top - h.top, w: r.width, h: r.height };
+}
 let cardCount = 0, cardDiscR = 0;                 // for the zoom that makes room for the cards (render loop)
 const seriesToggle = document.getElementById('series-toggle');
 function showSeries(on) { series.show(on); seriesToggle.setAttribute('aria-pressed', on); }
 seriesToggle.addEventListener('click', e => { e.preventDefault(); showSeries(seriesToggle.getAttribute('aria-pressed') !== 'true'); if (!expanded) expand(); });
 seriesToggle.addEventListener('keydown', e => { if (e.key === ' ') { e.preventDefault(); seriesToggle.click(); } });
-const cards = createCards({ hero, pins, now: () => simMs, disc: () => moonDisc, avoid: () => series.rect(),
-  ground: s => siteData.get(s, true), groundVersion: dataVersion, window: () => spanWindow, limits, onTerrain: s => openTerrain(s) });
+const cards = createCards({ hero, pins, now: () => simMs, disc: () => moonDisc, avoid: () => [series.rect(), panelRect(timebarEl), panelRect(legendBox)],
+  ground: s => siteData.get(s, true), groundVersion: dataVersion, window: () => limitWindow, limits, onTerrain: s => openTerrain(s) });
 
 // --- Lunar surface: relief mesh, surface modes, layers, legend ---------------------------
 // "Surface" of the sidebar chooses what the ground shows; the layers lie over it. The same choice holds in
@@ -643,6 +690,7 @@ fetch('data/globe/horizon_720x360x24.json').then(r => r.ok ? r.json() : Promise.
   const buf = await fetch('data/globe/' + meta.file).then(r => r.ok ? r.arrayBuffer() : Promise.reject());
   if (buf.byteLength !== meta.width * meta.height * meta.azimuths) return;
   horizonMap = { bytes: new Uint8Array(buf), meta };
+  area.setSkyline(horizonMap.bytes, meta);
   if (globe) { globe.setHorizon(horizonMap.bytes, meta); sunLight.castShadow = false; placeBodies(); }
 }).catch(() => console.warn('Skyline map not loaded: the Moon keeps the shadow map.'));
 function buildGlobe(detail) {
@@ -652,6 +700,7 @@ function buildGlobe(detail) {
   moon.add(globe.group); material.visible = false;
   if (horizonMap) globe.setHorizon(horizonMap.bytes, horizonMap.meta);
   sunLight.castShadow = !globe.hasHorizon; placeBodies();
+  area.refresh();
   const size = detail === 1 ? 4096 : 2048;
   if (sunLight.shadow.mapSize.x !== size) { sunLight.shadow.mapSize.set(size, size); sunLight.shadow.map?.dispose(); sunLight.shadow.map = null; }
   applySurface();
@@ -739,6 +788,9 @@ function systemReadout(e) {
       const sun = siteState(simMs, makeSite(lat, lon, z), tState).sun, frac = discFraction(sun.el - skylineFromGlobe(globeGrid, lat, lon, sun.az), SUN_RADIUS_DEG);
       lines.push('Sun ' + signed(sun.el) + ', ' + Math.round(frac * 100) + ' % of its disc in view');
     }
+    const lim = area.at(lat, lon);                      // the cell's numbers behind the marked area
+    if (lim) { const h = v => v === Infinity ? 'over ' + LIMIT_MAX_H + ' h' : v.toFixed(1) + ' h';
+      lines.push([lim.sun != null && 'Longest darkness ' + h(lim.sun), lim.earth != null && 'Longest DTE outage ' + h(lim.earth)].filter(Boolean).join(', ') + ' <span>(' + (lim.free ? 'next 24 h' : 'time span') + ', 0.5° cell)</span>'); }
     if (layerOn.squares) { const i = globe.squareAt(lat, lon); globe.markSquare(i); lines.push(i >= 0 ? 'Square ' + globe.squares[i].label : 'In no square'); }
   }
   showReadout(e, lines);
@@ -886,7 +938,9 @@ function frame(now) {
     layout();
   }
   updateWindow();
+  area.update();
   pins.update(bufW, bufH);
+  pointToBodies();
   cards.update();
   // Info cards and zoom: a card more than before and they no longer stand free of each other -> zoom out as far as
   // needed (never in). While the Moon changes size on screen the cards that were not moved by hand follow it.
@@ -995,7 +1049,7 @@ requestAnimationFrame(frame);
   const endScrub = () => { scrubbing = false; };
   scrub.addEventListener('change', endScrub); scrub.addEventListener('pointerup', endScrub); scrub.addEventListener('blur', endScrub);
   // One hour back or on: the step at which shadows are worth comparing. Stays inside a set span.
-  document.querySelectorAll('.tb-step').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('.tb-step[data-step]').forEach(b => b.addEventListener('click', () => {      // not "Clear", which shares the class for its look
     const t = simMs + b.dataset.step * 3600000;
     setTime(stopMs < Infinity ? Math.min(Math.max(t, loopMs), stopMs - 1) : t);
   }));
@@ -1029,8 +1083,9 @@ requestAnimationFrame(frame);
     b.setAttribute('aria-pressed', on); layers[b.dataset.param]?.(on);
   }));
   // The two limits: the longest time a site may go without the Sun and without the Earth. They show their value next to
-  // the label; the info cards compare the longest darkness and the longest outage of the time span with them.
+  // the label ("Off" at the right end: no limit). The area of the Moon within the limits that are set is marked on the
+  // globe (landing-area.js), and the info cards compare the longest darkness and the longest outage with them.
   box.querySelectorAll('.prange').forEach(l => { const r = l.querySelector('input'), o = l.querySelector('output');
-    const show = () => { o.textContent = r.value + ' h'; r.style.setProperty('--p', (r.value - r.min) / (r.max - r.min) * 100 + '%'); }; r.addEventListener('input', show); show(); });
+    const show = () => { const off = +r.value > LIMIT_MAX_H; o.textContent = off ? 'Off' : r.value + ' h'; r.setAttribute('aria-valuetext', off ? 'Off, no limit' : r.value + ' hours'); r.style.setProperty('--p', (r.value - r.min) / (r.max - r.min) * 100 + '%'); }; r.addEventListener('input', show); show(); });
   addEventListener('keydown', e => { if (e.key !== 'Escape') return; if (box.classList.contains('open')) tab.click(); else if (scope === 'terrain') closeTerrain(); });
 }
