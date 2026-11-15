@@ -1,0 +1,9 @@
+{
+  "name": "terrabits",
+  "private": true,
+  "description": "TerraBits: lunar landing site navigator (NASA Space Apps 2026). No build step and no dependencies; this file only tells Node that the page's modules are ES modules.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}

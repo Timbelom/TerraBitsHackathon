@@ -7,7 +7,8 @@
 // (expiry-date/data/sky_2027_2066.bin, 1662 samples across 2027-2066):
 //   Earth direction: mean 0.10 deg, max 0.34 deg | Sun direction: mean 0.02 deg, max 0.05 deg
 //   Earth distance: mean 283 km, max 1240 km
-// Swap this module for backend values later; callers only use the returned vectors.
+// The page takes Sun and Earth from JPL Horizons where that file covers the date (core/sky.js); this model
+// is the fallback outside 2027-2066 and gives the Moon's orientation among the stars.
 //
 // Two frames are offered:
 //   lunarSky(ms)     Moon-fixed (rotates with the Moon): x = lunar longitude 90 E, y = lunar north pole,
@@ -80,6 +81,18 @@ export function lunarSky(ms) {
     icrsToScene: [M[1], M[2], M[0]],
     gmstDeg: ((280.46061837 + 360.98564736629 * d) % 360 + 360) % 360,
   };
+}
+
+/**
+ * The same model in the Moon's body-fixed frame (x = lon 0, y = lon 90 E, z = north), for core/sky.js:
+ * sun: unit vector from the Moon's centre; earth: position of the Earth's centre in km; distances in km.
+ */
+export function bodySky(ms) {
+  const d = (ms - J2000_MS) / DAY_MS;
+  const M = moonBodyMatrix(d), moon = moonIcrs(d), sun = sunIcrs(d);
+  const earth = apply(M, [-moon[0], -moon[1], -moon[2]]);
+  const sunB = apply(M, [sun[0] - moon[0], sun[1] - moon[1], sun[2] - moon[2]]);
+  return { sun: unit(sunB), earth, earthDistKm: Math.hypot(...earth), sunDistKm: Math.hypot(...sunB) };
 }
 
 // ICRS -> inertial scene axes (ecliptic of J2000): x = ecliptic y, y = ecliptic pole, z = ecliptic x.

@@ -1,0 +1,100 @@
+/* Tutorial of the landing page (landing-tour.js): the hint beside a control, the outline round that control,
+   and the reference sheet. It follows the guided demo (landing-demo.css): everything is set in the face of the
+   title (Jost), on one surface that is very dark and half transparent, without a line, so the type also reads over
+   lit ground; the blur keeps labels of the scene behind it from mixing with the text. Unlike the demo's text the
+   hint stays small: the page under it is in use. Colours, spacing and radii from tokens.css. */
+
+/* The hint. Anchored to the scene: top right, under the header; with class left top left, clear of the Parameters
+   tab. So it keeps its place at the edge exactly while the sidebar narrows the scene. A change of side is a fade
+   (class swap). The transform is only the offset of a hint dragged by hand. Head and buttons stay; the middle scrolls. */
+.tour-hint{--tour-pad:calc(28 * var(--dp));position:absolute;right:var(--s4);top:calc(93 * var(--dp));z-index:12;display:flex;flex-direction:column;gap:var(--s4);width:min(calc(480 * var(--dp)),calc(100% - calc(72 * var(--dp)) - var(--s4)));max-height:calc(100svh - calc(93 * var(--dp)) - var(--s4));overflow:hidden;padding:var(--tour-pad);background:rgb(2 4 11 / .64);-webkit-backdrop-filter:blur(calc(14 * var(--dp)));backdrop-filter:blur(calc(14 * var(--dp)));border-radius:var(--r-outer);color:var(--text);font:300 calc(17 * var(--dp))/1.5 var(--font-display);letter-spacing:.01em;cursor:grab;user-select:none;touch-action:none;transition:opacity .15s ease}
+/* a low window: the hint and the sheet scroll, with a thin bar in the colours of the surface */
+.tour-scroll,.tour-ref{scrollbar-width:thin;scrollbar-color:rgb(255 255 255 / .28) transparent}
+.tour-hint[hidden]{display:none}
+.tour-hint.left{right:auto;left:calc(72 * var(--dp))}
+.tour-hint.fresh{transition:none;opacity:0}
+.tour-hint.swap{opacity:0;pointer-events:none}
+.tour-hint.moving{cursor:grabbing}
+.tour-hint p,.tour-hint h2{margin:0}
+.tour-hint b{font-weight:400;color:#fff}
+
+/* Chapter at the left; "Reference" and "Close" as plain words at the right, as "Skip demo" in the demo */
+.tour-head{display:flex;align-items:center;gap:var(--s4);margin:calc(-10 * var(--dp)) 0}
+.tour-chapter{flex:1;font-size:calc(14 * var(--dp));font-weight:400;line-height:1.4;color:#9bbccc;letter-spacing:.14em;text-transform:uppercase}
+.tour-hint .tour-close,.tour-ref-open{flex:none;height:var(--hit);padding:0;background:none;border:0;color:var(--text-muted);font:400 calc(15 * var(--dp)) var(--font-display);letter-spacing:.02em;text-decoration:underline;text-underline-offset:calc(4 * var(--dp));cursor:pointer;transition:color var(--t-fast)}
+.tour-hint .tour-close:hover,.tour-ref-open:hover{color:var(--text)}
+
+/* Where in the tutorial this stop is: one mark per stop, grouped by chapter */
+.tour-steps{display:flex;gap:var(--s3)}
+.tour-group{display:flex;flex:1;gap:var(--s1)}
+.tour-steps i{flex:1;height:calc(2 * var(--dp));background:rgb(255 255 255 / .16);border-radius:1px;transition:background var(--t-fast)}
+.tour-steps i.past{background:#9bbccc}
+.tour-steps i.now{background:var(--text)}
+.tour-hint.last .tour-steps i{background:#9bbccc}
+
+.tour-scroll{display:flex;flex-direction:column;flex:1 1 auto;gap:var(--s4);min-height:0;margin-right:calc(-1 * var(--s3));padding-right:var(--s3);overflow-y:auto}
+.tour-scroll > *{flex:none}
+.tour-head,.tour-steps,.tour-nav{flex:none}
+.tour-body{display:flex;flex-direction:column;gap:var(--s3)}
+.tour-q{font-size:calc(30 * var(--dp));font-weight:300;letter-spacing:.01em;line-height:1.14;text-wrap:balance}
+.tour-text{text-wrap:pretty}
+
+/* Try it, Observed, Note: one line of label each, set apart by spacing */
+.tour-try{display:flex;align-items:flex-start;gap:var(--s3)}
+.tour-try[hidden],.tour-seen[hidden],.tour-note[hidden],.tour-auto[hidden]{display:none}
+.tour-try p{flex:1}
+.tour-try b,.tour-seen > b,.tour-note b{display:block;font-size:calc(13 * var(--dp));font-weight:400;line-height:1.5;color:#9bbccc;letter-spacing:.14em;text-transform:uppercase}
+.tour-check{display:grid;place-items:center;flex:none;width:calc(20 * var(--dp));height:calc(20 * var(--dp));margin-top:calc(22 * var(--dp));border:calc(1.6 * var(--dp)) solid var(--text-muted);border-radius:50%;color:transparent;transition:background var(--t-fast),border-color var(--t-fast),color var(--t-fast)}
+.tour-check svg{width:calc(12 * var(--dp));height:calc(12 * var(--dp))}
+.tour-try.done .tour-check{background:var(--good);border-color:var(--good);color:var(--accent-ink)}
+.tour-auto{flex:none;align-self:center;height:calc(36 * var(--dp));padding:0 var(--s4);background:rgb(255 255 255 / .1);border:0;border-radius:var(--r-outer);color:var(--text);font:400 calc(14 * var(--dp)) var(--font-display);letter-spacing:.06em;text-transform:uppercase;cursor:pointer;transition:background var(--t-fast),opacity var(--t-fast)}
+.tour-auto:hover{background:rgb(255 255 255 / .18)}
+.tour-auto:disabled{opacity:.5;cursor:default}
+.tour-seen{padding-left:calc(calc(20 * var(--dp)) + var(--s3))}
+.tour-seen-text{font-weight:400;font-variant-numeric:tabular-nums;text-wrap:pretty;user-select:text;cursor:text}
+.tour-seen table{width:100%;margin-top:var(--s1);border-collapse:collapse}
+.tour-seen th{padding:0 var(--s3) var(--s1) 0;font-weight:300;color:var(--text-muted);text-align:left}
+.tour-seen td{padding:0 var(--s3) 0 0;white-space:nowrap}
+.tour-seen th:last-child,.tour-seen td:last-child{padding-right:0;text-align:right}
+.tour-note{padding-left:calc(calc(20 * var(--dp)) + var(--s3));font-size:calc(16 * var(--dp));color:var(--text-muted);text-wrap:pretty}
+
+/* Back, where we are, Next: as in the demo */
+.tour-nav{display:flex;align-items:center;gap:var(--s3);margin-top:var(--s1)}
+.tour-count{flex:1;text-align:center;font-size:calc(16 * var(--dp));font-weight:400;line-height:1;letter-spacing:.04em;font-variant-numeric:tabular-nums;color:var(--text-muted)}
+.tour-next,.tour-back{height:var(--hit);padding:0 var(--s5);border-radius:var(--r-outer);font:400 calc(16 * var(--dp)) var(--font-display);letter-spacing:.06em;text-transform:uppercase;cursor:pointer;transition:opacity var(--t-fast),background var(--t-fast)}
+.tour-next{background:var(--accent);border:1px solid var(--accent);color:var(--accent-ink)}
+.tour-next:hover{opacity:.86}
+.tour-back{background:rgb(255 255 255 / .1);border:1px solid transparent;color:var(--text)}
+.tour-back:hover{background:rgb(255 255 255 / .18)}
+.tour-back:disabled{opacity:.45;cursor:default}
+.tour-hint button:focus-visible,.tour-ref button:focus-visible{outline:calc(2 * var(--dp)) solid var(--accent);outline-offset:calc(3 * var(--dp))}
+
+/* The control a stop is about */
+.tour-spot{outline:calc(2 * var(--dp)) solid var(--accent)!important;outline-offset:calc(5 * var(--dp));animation:tour-spot 1.1s ease 2}
+.params .tour-spot{outline-offset:calc(3 * var(--dp))}
+@keyframes tour-spot{0%,100%{outline-offset:calc(5 * var(--dp))}50%{outline-offset:calc(12 * var(--dp))}}
+
+body.tour .demo-shield{display:none}
+
+/* Reference sheet: over the scene, the same surface and face, denser because it is looked things up in */
+.tour-ref{position:absolute;left:50%;top:calc(93 * var(--dp));z-index:13;transform:translateX(-50%);width:min(calc(1120 * var(--dp)),calc(100% - 2 * var(--s5)));max-height:calc(100svh - calc(93 * var(--dp)) - var(--s5));overflow-y:auto;padding:var(--s6) calc(40 * var(--dp)) calc(40 * var(--dp));background:rgb(2 4 11 / .86);-webkit-backdrop-filter:blur(calc(14 * var(--dp)));backdrop-filter:blur(calc(14 * var(--dp)));border-radius:var(--r-outer);color:var(--text);font:300 calc(17 * var(--dp))/1.5 var(--font-display);letter-spacing:.01em}
+.tour-ref[hidden]{display:none}
+.tour-ref:focus{outline:none}
+.tour-ref header{position:relative;margin-bottom:var(--s6);padding-right:var(--s6)}
+.tour-ref h2{margin:0 0 var(--s2);font-size:calc(40 * var(--dp));font-weight:300;letter-spacing:.01em;line-height:1.14}
+.tour-ref header p{margin:0;font-size:calc(19 * var(--dp));color:var(--text-muted)}
+.tour-ref .tour-close{position:absolute;right:calc(-1 * var(--s2));top:0;display:grid;place-items:center;width:var(--hit);height:var(--hit);padding:0;background:none;border:0;border-radius:var(--r-inner);color:var(--text-muted);cursor:pointer;transition:background var(--t-fast),color var(--t-fast)}
+.tour-ref .tour-close:hover{background:rgb(255 255 255 / .1);color:var(--text)}
+.tour-ref .tour-close svg{width:calc(14 * var(--dp));height:calc(14 * var(--dp))}
+.tour-ref-grid{columns:3 calc(280 * var(--dp));column-gap:calc(40 * var(--dp))}
+.tour-ref-grid section{break-inside:avoid;margin-bottom:var(--s6)}
+.tour-ref h3{margin:0 0 var(--s2);font-size:calc(14 * var(--dp));font-weight:400;line-height:1.4;color:#9bbccc;letter-spacing:.14em;text-transform:uppercase}
+.tour-ref dl{margin:0}
+.tour-ref dt{margin-top:var(--s3);font-weight:400;color:#fff}
+.tour-ref dd{margin:0;color:var(--text-muted);text-wrap:pretty}
+
+@media (max-width:585px),(max-aspect-ratio:11/10){
+  .tour-hint{--tour-pad:var(--s5);font-size:calc(16 * var(--dp));-webkit-backdrop-filter:none;backdrop-filter:none;background:rgb(2 4 11 / .8)}
+  .tour-q{font-size:calc(24 * var(--dp))}
+}
+@media (prefers-reduced-motion:reduce){.tour-hint{transition:none}.tour-spot{animation:none}}

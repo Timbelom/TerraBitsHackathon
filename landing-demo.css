@@ -1,0 +1,139 @@
+/* Guided demo and tutorial of the landing page (landing-demo.js). Values from tokens.css only. */
+
+/* Title page: the two ways in, left of the Moon; what the tool is for, right of it. Free type in the face of
+   the title (Jost 300), no boxes. --strip is the width free beside the Moon (its diameter is 56 % of the window
+   height, landing.js) and beside the title across it (3.75 em wide); each block stands centred in its strip,
+   halfway between the window edge and the Moon. --zone is the strip less a gap on both sides; every size below is fitted to it. */
+.hero{--edge:clamp(calc(24 * var(--dp)),6vw,calc(104 * var(--dp)));--title:clamp(calc(46 * var(--dp)),calc(1.6rem + 6vw),calc(128 * var(--dp)));--strip:calc((100vw - max(56svh,var(--title) * 3.75)) / 2);--zone:calc(var(--strip) - 2 * var(--s6))}
+.demo-start,.demo-intro{position:absolute;top:57%;z-index:7;font-family:var(--font-display);font-weight:300;color:var(--text);text-shadow:0 calc(2 * var(--dp)) calc(34 * var(--dp)) #02040bcc;transition:opacity .5s ease,visibility .5s;animation:hero-in 1s ease .8s both}
+.demo-start{left:calc(var(--strip) / 2);transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:flex-start;gap:var(--s5)}
+/* Arrow and "TUTORIAL." are 5 em wide in Jost 300 with this tracking: 0.64 of the title, or as large as fits the zone */
+.demo-word{padding:0;background:none;border:0;border-radius:var(--r-inner);color:inherit;font:inherit;display:block;font-size:min(calc(var(--title) * .64),calc(var(--zone) / 5.1));letter-spacing:.02em;line-height:1.1;text-shadow:inherit;white-space:nowrap;cursor:pointer;transition:opacity var(--t-fast)}
+.demo-word span{color:#9bbccc}
+.demo-word svg{width:.62em;height:.62em;margin-right:.22em;vertical-align:-.04em;color:#9bbccc;transition:transform var(--t-fast) var(--ease)}
+.demo-word:hover svg,.demo-word:focus-visible svg{transform:translateX(.12em)}
+.demo-start:hover .demo-word:not(:hover){opacity:.56}
+.demo-intro{right:calc(var(--strip) / 2);transform:translate(50%,-50%);width:max-content;max-width:min(var(--zone),calc(580 * var(--dp)));border-radius:var(--r-inner);cursor:pointer}
+.demo-intro h2{margin:0 0 var(--s4);font:inherit;font-size:clamp(calc(26 * var(--dp)),calc(var(--zone) / 8.4),calc(56 * var(--dp)));letter-spacing:.01em;line-height:1.15;text-wrap:balance}
+.demo-intro p{margin:0;font:inherit;font-size:clamp(calc(17 * var(--dp)),calc(var(--zone) / 20),calc(23 * var(--dp)));font-weight:400;line-height:1.55;color:var(--text-muted);text-wrap:pretty;transition:color var(--t-fast)}
+.demo-intro:hover p,.demo-intro:focus-visible p{color:var(--text)}
+.demo-intro .demo-hint{margin-top:var(--s4);font-size:clamp(calc(16 * var(--dp)),calc(var(--zone) / 24),calc(19 * var(--dp)));color:var(--text)}
+.demo-hint svg{width:.9em;height:.9em;margin-right:.5em;vertical-align:-.1em;color:#9bbccc;transition:transform var(--t-fast) var(--ease)}
+.demo-intro:hover .demo-hint svg,.demo-intro:focus-visible .demo-hint svg{transform:translateX(.25em)}
+.demo-word:focus-visible,.demo-intro:focus-visible,.demo-next:focus-visible,.demo-back:focus-visible,.demo-skip:focus-visible{outline:calc(2 * var(--dp)) solid var(--accent);outline-offset:calc(4 * var(--dp))}
+body.expanded .demo-start,body.expanded .demo-intro,body.demo .demo-start,body.demo .demo-intro,body.tour .demo-start,body.tour .demo-intro,body.terrain .demo-start,body.terrain .demo-intro{opacity:0;visibility:hidden;pointer-events:none;animation:none}
+
+/* While it runs */
+.demo-root[hidden]{display:none}
+/* Everything of the demo is set in the face of the title (Jost), as "DEMO." on the title page. */
+.demo-root{font-family:var(--font-display);font-weight:300;color:var(--text);--zone-w:44vw;--box:calc(var(--zone-w) - 2 * var(--s6))}
+.demo-shield{position:fixed;inset:0;z-index:10;cursor:default}
+body.tour .demo-shield{display:none}
+
+/* The date stands over the text, clear of the Sun and the Earth in the picture */
+.demo-date{position:absolute;left:calc(100% - var(--zone-w) / 2);top:var(--s5);z-index:11;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:var(--s1);pointer-events:none;text-shadow:0 1px calc(18 * var(--dp)) #02040b,0 0 calc(4 * var(--dp)) #02040b;white-space:nowrap}
+.demo-date[hidden]{display:none}
+.demo-date-label{font-size:calc(15 * var(--dp));font-weight:400;line-height:1.4;color:var(--text-muted);letter-spacing:.1em;text-transform:uppercase}
+.demo-date-day{font-size:calc(36 * var(--dp));font-weight:300;line-height:1.15;letter-spacing:.02em;font-variant-numeric:tabular-nums}
+
+.demo-tag{position:absolute;left:0;top:0;z-index:11;font-size:calc(16 * var(--dp));font-weight:400;line-height:1.4;letter-spacing:.02em;color:var(--text);text-shadow:0 1px calc(10 * var(--dp)) #02040b,0 0 calc(3 * var(--dp)) #02040b;white-space:nowrap;pointer-events:none}
+.demo-tag[hidden]{display:none}
+.demo-tag.bad{color:var(--bad);font-size:calc(19 * var(--dp))}
+.demo-way{display:flex;align-items:center;gap:var(--s2);color:var(--text-muted)}
+.demo-way[hidden]{display:none}
+.demo-way svg{flex:none;width:calc(14 * var(--dp));height:calc(14 * var(--dp))}
+.demo-way.there svg{display:none}
+/* Battery and counter: over the picture, in the middle of the room the text leaves free */
+.demo-meter{position:absolute;left:calc((100% - var(--zone-w)) / 2);top:calc(var(--s5) + calc(84 * var(--dp)));z-index:11;transform:translateX(-50%);display:flex;align-items:center;gap:var(--s3);padding:var(--s3) var(--s5);background:rgb(2 4 11 / .62);border-radius:var(--r-outer);font-size:calc(19 * var(--dp));font-weight:400;line-height:1.4;color:var(--text-muted);white-space:nowrap;pointer-events:none}
+.demo-meter[hidden]{display:none}
+.demo-batt{position:relative;width:calc(56 * var(--dp));height:calc(24 * var(--dp));padding:calc(3 * var(--dp));border:calc(1.6 * var(--dp)) solid var(--text);border-radius:var(--r-inner);margin-right:var(--s1)}
+.demo-batt::after{content:"";position:absolute;left:100%;top:50%;width:calc(4 * var(--dp));height:calc(10 * var(--dp));margin-left:calc(1.6 * var(--dp));transform:translateY(-50%);background:var(--text);border-radius:0 calc(2 * var(--dp)) calc(2 * var(--dp)) 0}
+.demo-batt i{display:block;height:100%;background:var(--good);border-radius:calc(2 * var(--dp))}
+.demo-meter.empty .demo-batt{border-color:var(--bad)}
+.demo-meter.empty .demo-batt::after{background:var(--bad)}
+.demo-meter.empty .demo-batt-label{color:var(--bad)}
+.demo-hours{min-width:calc(104 * var(--dp));margin-left:var(--s4);font-size:calc(30 * var(--dp));font-weight:300;line-height:1.2;font-variant-numeric:tabular-nums;color:var(--text);text-align:right}
+
+/* The text of a shot. It takes the room the picture does not need: --zone-w of the hero's width at one side
+   (landing-demo.js keeps that room free of the bodies), less a gap all round. One surface, very dark and half
+   transparent, so the type also reads over lit ground; the blur keeps labels of the scene behind it from mixing with the text. No line.
+   All sizes follow the width of the box (and the height of a low window). The box is centred in the height under the date. */
+.demo-panel{position:absolute;right:var(--s6);top:calc(50% + calc(40 * var(--dp)));z-index:12;transform:translateY(-50%);display:flex;flex-direction:column;gap:var(--s5);width:var(--box);max-height:calc(100% - calc(128 * var(--dp)));overflow:auto;padding:clamp(var(--s5),calc(var(--box) / 16),calc(40 * var(--dp)));background:rgb(2 4 11 / .64);-webkit-backdrop-filter:blur(calc(14 * var(--dp)));backdrop-filter:blur(calc(14 * var(--dp)));border-radius:var(--r-outer)}
+.demo-panel.left{right:auto;left:var(--s6)}
+.demo-lead,.demo-body{display:contents}
+/* Across the bottom: chapter and headline on the left, text, status and buttons on the right; the picture has the whole width above */
+.demo-panel.bottom{left:var(--s6);right:var(--s6);top:auto;bottom:var(--s5);transform:none;width:auto;max-height:58%;flex-direction:row;gap:calc(var(--s6) + var(--s5))}
+.demo-panel.bottom .demo-lead,.demo-panel.bottom .demo-body{display:flex;flex-direction:column;gap:var(--s4);min-width:0}
+.demo-panel.bottom .demo-lead{flex:5}
+.demo-panel.bottom .demo-body{flex:6;padding-top:var(--s6)}
+.demo-panel.bottom .demo-chapter{margin-right:0}
+.demo-root.bottom .demo-date{left:50%}
+.demo-root.left .demo-date{left:calc(var(--zone-w) / 2)}
+.demo-root.left .demo-meter{left:calc((100% + var(--zone-w)) / 2)}
+.demo-panel[hidden]{display:none}
+.demo-chapter{margin:0 calc(120 * var(--dp)) 0 0;font-size:clamp(calc(14 * var(--dp)),calc(var(--box) / 36),calc(18 * var(--dp)));font-weight:400;line-height:1.4;color:#9bbccc;letter-spacing:.14em;text-transform:uppercase}
+.demo-head{margin:0;font-size:clamp(calc(32 * var(--dp)),min(calc(var(--box) / 12.5),7.2svh),calc(54 * var(--dp)));font-weight:300;letter-spacing:.01em;line-height:1.14;text-wrap:balance}
+.demo-text p{margin:0;font-size:clamp(calc(21 * var(--dp)),min(calc(var(--box) / 24),3.7svh),calc(27 * var(--dp)));font-weight:300;line-height:1.5;text-wrap:pretty}
+.demo-text b{font-weight:400;color:#fff}
+/* The key shot (the site is dark after the slip): marked as a warning, the one use of red for type in the demo */
+.demo-panel.key{box-shadow:inset calc(4 * var(--dp)) 0 0 var(--bad)}
+.demo-panel.key .demo-chapter{color:var(--bad)}
+.demo-panel.key .demo-head{font-size:clamp(calc(36 * var(--dp)),min(calc(var(--box) / 10.4),8.6svh),calc(66 * var(--dp)));line-height:1.1}
+.demo-head em,.demo-text em{font-style:normal;font-weight:400;color:var(--bad)}
+/* Names of what is acting in the picture (lander, Sun, Earth, Moon, a site): set off in the colour of the title's full stop */
+.demo-head i,.demo-text i{font-style:normal;color:#9bbccc}
+.demo-text i{font-weight:400}
+.demo-status{display:grid;grid-template-columns:auto 1fr;gap:var(--s1) var(--s5);margin:0;font-size:clamp(calc(17 * var(--dp)),calc(var(--box) / 30),calc(21 * var(--dp)));font-weight:400;line-height:1.5}
+.demo-status[hidden]{display:none}
+.demo-status dt{color:var(--text-muted)}
+.demo-status dd{display:flex;flex-wrap:wrap;gap:var(--s1) var(--s5);margin:0}
+.demo-status .good{color:var(--good)}
+.demo-status .bad{color:var(--bad)}
+.demo-wait{margin:0;font-size:calc(17 * var(--dp));font-weight:400;line-height:1.5;color:var(--text-muted)}
+.demo-wait[hidden]{display:none}
+.demo-nav,.demo-end{display:flex;align-items:center;gap:var(--s3);margin-top:var(--s2)}
+.demo-nav[hidden],.demo-end[hidden]{display:none}
+.demo-end{flex-wrap:wrap}
+.demo-count{flex:1;text-align:center;font-size:calc(17 * var(--dp));font-weight:400;line-height:1;letter-spacing:.04em;font-variant-numeric:tabular-nums;color:var(--text-muted)}
+.demo-next,.demo-back{height:calc(48 * var(--dp));padding:0 var(--s6);border-radius:var(--r-outer);font:400 calc(18 * var(--dp)) var(--font-display);letter-spacing:.06em;text-transform:uppercase;cursor:pointer;transition:opacity var(--t-fast),background var(--t-fast)}
+.demo-next{background:var(--accent);border:1px solid var(--accent);color:var(--accent-ink)}
+.demo-next:hover{opacity:.86}
+.demo-back{background:rgb(255 255 255 / .1);border:1px solid transparent;color:var(--text)}
+.demo-back:hover{background:rgb(255 255 255 / .18)}
+.demo-back:disabled{opacity:.45;cursor:default}
+/* "Skip demo" stands in the line of the chapter, at the right */
+.demo-skip{position:absolute;top:clamp(var(--s5),calc(var(--box) / 16),calc(40 * var(--dp)));right:clamp(var(--s5),calc(var(--box) / 16),calc(40 * var(--dp)));height:var(--hit);margin-top:calc(-10 * var(--dp));padding:0;background:none;border:0;color:var(--text-muted);font:400 calc(16 * var(--dp)) var(--font-display);letter-spacing:.02em;text-decoration:underline;text-underline-offset:calc(4 * var(--dp));cursor:pointer}
+.demo-skip:hover{color:var(--text)}
+.demo-skip[hidden]{display:none}
+
+/* The page under the demo: its own controls step back, the scene has the room */
+body.demo .timebar{display:none}
+body.demo .offscreen{display:none}
+body.demo-far .pins{display:none}
+body.demo .site-header nav,body.demo .site-header .search{visibility:hidden}
+body.demo .cards,body.demo .card-lines,body.demo .series,body.demo .readout,body.demo .tbar{display:none!important}
+body.demo .legend{bottom:var(--s5);right:auto;left:calc(72 * var(--dp))}
+/* Tutorial: the control a hint is about */
+.demo-spot{outline:calc(2 * var(--dp)) solid var(--accent)!important;outline-offset:calc(6 * var(--dp));border-radius:var(--r-inner);animation:demo-spot 1.1s ease 2}
+@keyframes demo-spot{0%,100%{outline-offset:calc(6 * var(--dp))}50%{outline-offset:calc(14 * var(--dp))}}
+/* A ring round the Moon when the area on it has changed */
+.demo-pulse{position:absolute;z-index:11;border:calc(2 * var(--dp)) solid var(--good);border-radius:50%;transform:translate(-50%,-50%);opacity:0;pointer-events:none}
+.demo-pulse.on{animation:demo-pulse 1.5s ease-out 1}
+@keyframes demo-pulse{0%{opacity:.95;transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,-50%) scale(1.22)}}
+/* Only the Start and Stop row of the time bar, for the shots that change the mission length */
+body.demo.demo-span .timebar{display:flex}
+body.demo.demo-span .timebar > :not(.tb-span){display:none}
+@media (prefers-reduced-motion:reduce){.demo-spot{animation:none}.demo-pulse.on{animation-duration:.01s}}
+
+@media (max-width:585px),(max-aspect-ratio:11/10){
+  /* no room beside the Moon: the two words go side by side under it, the text is left out */
+  .demo-intro{display:none}
+  .demo-start{left:0;right:0;top:auto;bottom:var(--s6);transform:none;flex-direction:row;justify-content:center;gap:var(--s6)}
+  .demo-word{font-size:clamp(calc(22 * var(--dp)),6vw,calc(48 * var(--dp)))}
+  /* the text lies across the bottom, the picture keeps the whole width */
+  .demo-panel,.demo-panel.left{-webkit-backdrop-filter:none;backdrop-filter:none;background:rgb(2 4 11 / .8);top:auto;bottom:var(--s4);left:var(--s4);right:var(--s4);width:auto;max-height:46%;transform:none;gap:var(--s4);padding:var(--s5)}
+  .demo-head{font-size:clamp(calc(24 * var(--dp)),5.4vw,calc(40 * var(--dp)))}
+  .demo-text p{font-size:clamp(calc(17 * var(--dp)),3vw,calc(22 * var(--dp)))}
+  .demo-meter,.demo-date,.demo-root.left .demo-meter,.demo-root.left .demo-date{left:50%}
+}
+@media (prefers-reduced-motion:reduce){.demo-start,.demo-intro{animation:none;transition:none}}

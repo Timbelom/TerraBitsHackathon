@@ -1,30 +1,61 @@
 /* Info cards for markers on the 3D Moon (landing-cards.js). Values from tokens.css only.
-   Same surface as the parameter sidebar. One surface per card; the two groups (Sun, Earth) are
+   Same surface as the parameter sidebar. One surface per card; the groups (Sun, Earth, time span) are
    separated by spacing. A thin line joins each card to its marker. */
 .card-lines{position:absolute;inset:0;width:100%;height:100%;z-index:2;overflow:hidden;pointer-events:none}
-.card-lines line{stroke:var(--text);stroke-opacity:.34;stroke-width:1}
+.card-lines polyline{fill:none;stroke:var(--text);stroke-opacity:.34;stroke-width:1;stroke-linejoin:round}
 .cards{position:absolute;inset:0;z-index:4;overflow:hidden;pointer-events:none;font-family:var(--font-ui)}
 .entering .cards,.entering .card-lines{display:none}
-/* Sized to be read at a glance beside the scene: 16 px rows, labels and values in full text colour
-   (labels regular, values semibold), so nothing depends on the muted tone over a moving background. */
-.card{position:absolute;left:0;top:0;width:380px;padding:var(--s4) var(--s5) var(--s5);background:var(--surface);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);border:1px solid var(--line);border-radius:var(--r-outer);color:var(--text);font-size:16px;line-height:1.75;pointer-events:auto;cursor:grab;touch-action:none;user-select:none;animation:card-in var(--t-fast) var(--ease)}
+/* Compact, so the Moon keeps its size beside them: 14 px rows, labels and values in full text colour
+   (labels regular, values semibold), so nothing depends on the muted tone over a moving background.
+   A card is never taller than the room between the header and the time bar (275 px together); beyond
+   that its content scrolls. */
+.card{position:absolute;left:0;top:0;width:calc(312 * var(--dp));padding:var(--s3) var(--s4) var(--s4);background:var(--surface);-webkit-backdrop-filter:blur(calc(18 * var(--dp)));backdrop-filter:blur(calc(18 * var(--dp)));border:1px solid var(--line);border-radius:var(--r-outer);color:var(--text);font-size:calc(14 * var(--dp));line-height:1.5;max-height:calc(100% - calc(275 * var(--dp)));overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgb(255 255 255 / .3) transparent;pointer-events:auto;cursor:grab;touch-action:none;user-select:none;animation:card-in var(--t-fast) var(--ease)}
 .card[hidden]{display:none}
 .card.moving{cursor:grabbing}
-.card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.card:focus-visible{outline:calc(2 * var(--dp)) solid var(--accent);outline-offset:calc(2 * var(--dp))}
 .card header{display:flex;align-items:center;gap:var(--s2)}
 /* Name: a field that reads as the title; click to rename */
-.card-name{flex:1;min-width:0;height:40px;margin-left:calc(-1 * var(--s2));padding:0 var(--s2);background:none;border:1px solid transparent;border-radius:var(--r-inner);outline:0;color:var(--text);font:600 20px var(--font-ui);font-variant-numeric:tabular-nums;text-overflow:ellipsis;cursor:text;-webkit-user-select:text;user-select:text;transition:border-color var(--t-fast),background var(--t-fast)}
+.card-name{flex:1;min-width:0;height:calc(32 * var(--dp));margin-left:calc(-1 * var(--s2));padding:0 var(--s2);background:none;border:1px solid transparent;border-radius:var(--r-inner);outline:0;color:var(--text);font:600 calc(16 * var(--dp)) var(--font-ui);font-variant-numeric:tabular-nums;text-overflow:ellipsis;cursor:text;-webkit-user-select:text;user-select:text;transition:border-color var(--t-fast),background var(--t-fast)}
 .card-name:hover{background:var(--field)}
 .card-name:focus-visible{background:var(--field);border-color:var(--accent)}
-.card-close{flex:none;display:grid;place-items:center;width:36px;height:36px;margin-right:calc(-1 * var(--s2));padding:0;background:none;border:0;border-radius:var(--r-inner);color:var(--text);cursor:pointer;transition:background var(--t-fast)}
-.card-close svg{width:14px;height:14px}
+.card-close{flex:none;display:grid;place-items:center;width:calc(28 * var(--dp));height:calc(28 * var(--dp));margin-right:calc(-1 * var(--s2));padding:0;background:none;border:0;border-radius:var(--r-inner);color:var(--text);cursor:pointer;transition:background var(--t-fast)}
+.card-close svg{width:calc(12 * var(--dp));height:calc(12 * var(--dp))}
 .card-close:hover{background:var(--surface-hover)}
-.card-close:focus-visible{outline:2px solid var(--accent);outline-offset:0}
+.card-close:focus-visible{outline:calc(2 * var(--dp)) solid var(--accent);outline-offset:0}
 .card-sub{margin:0;font-variant-numeric:tabular-nums}
-.card dl{display:grid;grid-template-columns:auto 1fr;column-gap:var(--s4);margin:var(--s4) 0 0}
+/* What the numbers rest on. Marked for a moment when better ground has arrived and the numbers were redone. */
+.card-ground{margin:0 calc(-1 * var(--s1));padding:0 var(--s1);border-radius:var(--r-inner);font-size:calc(12 * var(--dp));line-height:calc(18 * var(--dp));font-variant-numeric:tabular-nums}
+.card-ground.changed{animation:card-ground calc(var(--t-panel) * 4) var(--ease)}
+@keyframes card-ground{from{background:var(--accent);color:var(--accent-ink)}}
+.card dl{display:grid;grid-template-columns:auto 1fr;column-gap:var(--s3);margin:var(--s2) 0 0;line-height:1.45}
+/* Third group: the time span of the sidebar. Its heading is the span itself; a value over its limit is a warning. */
+.card-span{margin:var(--s2) 0 0;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.card dl.card-limits{margin-top:0}
+/* Values a mission gains or suffers from: Sun or Earth in view or not, a gap within or over its limit. The words say it too. */
+.card dd.good{color:var(--good)}.card dd.bad{color:var(--bad)}
+.card dl [hidden]{display:none}
 .card dd{margin:0;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
-.card-terrain{display:block;width:100%;height:var(--hit);margin-top:var(--s5);padding:0;background:var(--field);border:1px solid transparent;border-radius:var(--r-inner);color:var(--text);font:500 16px var(--font-ui);cursor:pointer;transition:border-color var(--t-fast),background var(--t-fast)}
-.card-terrain:hover{background:rgb(255 255 255 / .14)}
-.card-terrain:focus-visible{border-color:var(--accent);outline:0}
+/* Delay row: one square per day of delay, 0 to 29. A day that holds is a filled square in the colour of a value within its
+   limit; a day that fails is a hollow one in the colour of a value over it (shape and colour both say it). On coarse ground
+   the squares are hatched: the answer is not reliable there. The squares are buttons (20 px high); focus moves with the arrow keys. */
+.card-delay{margin-top:var(--s2)}
+.card-delay-days{display:flex;margin:0 -1px}
+.card-delay-days[hidden]{display:none}
+.card-day{flex:1;min-width:0;height:calc(16 * var(--dp));padding:var(--s1) 1px;background:none;border:0;cursor:pointer}
+.card-day::before{content:"";display:block;height:100%;background:var(--good)}
+.card-day.bad::before{background:none;box-shadow:inset 0 0 0 calc(1.5 * var(--dp)) var(--bad)}
+.card-delay.coarse .card-day::before{background:repeating-linear-gradient(135deg,var(--good) 0 calc(1.5 * var(--dp)),transparent calc(1.5 * var(--dp)) calc(4 * var(--dp)))}
+.card-delay.coarse .card-day.bad::before{background:repeating-linear-gradient(135deg,var(--bad) 0 1px,transparent 1px calc(5 * var(--dp)))}
+.card-day:hover::before{outline:1px solid var(--text);outline-offset:1px}
+.card-day:focus-visible{outline:calc(2 * var(--dp)) solid var(--accent);outline-offset:-1px}
+.card-delay-text{margin:0;font-size:calc(12 * var(--dp));line-height:calc(18 * var(--dp));font-variant-numeric:tabular-nums}
+.card-delay-text b{font-weight:600}.card-delay-text b.good{color:var(--good)}.card-delay-text b.bad{color:var(--bad)}
+.card-terrain{display:block;width:100%;height:calc(36 * var(--dp));margin-top:var(--s3);padding:0;background:var(--accent);border:1px solid transparent;border-radius:var(--r-inner);color:var(--accent-ink);font:600 calc(14 * var(--dp)) var(--font-ui);cursor:pointer;transition:opacity var(--t-fast)}
+.card-terrain:hover{opacity:.86}
+.card-terrain:focus-visible{outline:calc(2 * var(--dp)) solid var(--accent);outline-offset:calc(2 * var(--dp))}
 @keyframes card-in{from{opacity:0}}
-@media(prefers-reduced-motion:reduce){.card{animation:none}.card-close,.card-name,.card-terrain{transition:none}}
+@media(prefers-reduced-motion:reduce){.card,.card-ground.changed{animation:none}.card-close,.card-name,.card-terrain{transition:none}}
+/* In the terrain view the card stands under the bar that names the place; it may then be shorter than its content */
+body.terrain .card{max-height:calc(100% - calc(260 * var(--dp)))}
+/* The header is 119 px high (landing-search.css), 34 px more than the 85 px the two numbers above were set for. */
+.card{max-height:calc(100% - calc(309 * var(--dp)))}body.terrain .card{max-height:calc(100% - calc(294 * var(--dp)))}

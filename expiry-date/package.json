@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "description": "Expiry Date keeps its CommonJS scripts (core.js, tools, tests).",
+  "type": "commonjs"
+}

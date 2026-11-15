@@ -11,10 +11,12 @@
 // selected nor has a card. A free marker that was given a name is saved for the browser session
 // (sessionStorage): it is listed in the search and comes back after a reload. Names given to listed
 // sites are kept the same way. Clearing the name of a saved marker makes it a plain free marker again.
+import { dp, onScale } from './ui/scale.js';
 import * as THREE from 'three';
 
 const PIN_SVG = '<svg viewBox="0 0 24 32" aria-hidden="true"><path d="M12 31.2S2.8 19.9 2.8 11.6a9.2 9.2 0 0 1 18.4 0C21.2 19.9 12 31.2 12 31.2Z"/><circle cx="12" cy="11.6" r="3.2"/><text x="12" y="15.6" text-anchor="middle"></text></svg>';
-const CLUSTER = 30, TURN_MS = 700, TILT_MAX = 1.1;       // TILT_MAX: same limit as dragging in landing.js
+let CLUSTER; onScale(k => { CLUSTER = 30 * k; });   // design px times dp(), see ui/scale.js
+const TURN_MS = 700, TILT_MAX = Math.PI / 2;       // TILT_MAX: same limit as dragging in landing.js (a pole can face the camera)
 const rad = THREE.MathUtils.degToRad;
 export const coordText = s => Math.abs(s.lat).toFixed(4) + '° ' + (s.lat < 0 ? 'S' : 'N') + ', ' + s.lon.toFixed(4) + '° E';
 
@@ -25,7 +27,7 @@ export function createPins({ root, hero, moon, pivot, camera, R }) {
   let turn = null;
   // sites: the listed sites (for the search). picked: id of the selected site, 'custom' for typed coordinates.
   // cards: ids of the sites with an open info card (kept by landing-cards.js). Each site carries vis, x, y: on screen this frame, hero px.
-  const api = { sites: [], on: false, picked: null, onPick: null, onOpen: null, onClose: null, cards: new Set(), show, pick, custom, face, undo, rename, marked, update };
+  const api = { sites: [], on: false, picked: null, onPick: null, onOpen: null, onClose: null, cards: new Set(), show, pick, custom, face, turnTo, undo, rename, marked, update };
   let freeN = 0;
   const STORE = 'terrabits.points';
   let saved = { points: [], names: {} };
@@ -39,7 +41,7 @@ export function createPins({ root, hero, moon, pivot, camera, R }) {
   function make(def) {
     const el = document.createElement('div'); el.className = 'pin'; el.hidden = true;
     el.innerHTML = '<div class="pin-names"></div><button type="button" class="pin-head">' + PIN_SVG + '</button>';
-    const s = { id: def.id, name: def.name, base: def.name, candidate: !!def.horizon, local: new THREE.Vector3(),
+    const s = { id: def.id, name: def.name, base: def.name, candidate: !!def.horizon, horizonFile: def.horizon || null, local: new THREE.Vector3(),
       el, head: el.lastChild, names: el.firstChild, count: el.querySelector('text'), key: '', members: null, x: 0, y: 0 };
     place(s, def.lat, def.lon);
     // One site: the pin selects it and opens its card. Several sites under one pin: the pin keeps the names open, a name does the same.
@@ -102,6 +104,11 @@ export function createPins({ root, hero, moon, pivot, camera, R }) {
     if (!c) return;
     place(own, c[0], c[1]); own.name = coordText(own); own.key = '';
     if (turnTo) face(own);
+  }
+  /** Turn the space to the tilt x and the turn y (radians), the short way round (tilt limited as for dragging). */
+  function turnTo(x, y) {
+    const r = pivot.rotation;
+    turn = { t0: performance.now(), ms: still.matches ? 0 : TURN_MS, x0: r.x, y0: r.y, dx: THREE.MathUtils.clamp(x, -TILT_MAX, TILT_MAX) - r.x, dy: Math.atan2(Math.sin(y - r.y), Math.cos(y - r.y)) };
   }
   /** Turn the space so that the site faces the camera (tilt limited as for dragging). */
   function face(s) {

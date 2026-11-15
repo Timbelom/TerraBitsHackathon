@@ -1,0 +1,45 @@
+{
+ "description": "Global maps: time-averaged visible share of the Sun's and of the Earth's disc above the terrain horizon.",
+ "layout": "row 0 = northernmost, column 0 = westernmost (longitude -180 deg); values at cell centres",
+ "cell_deg": 0.5,
+ "frame": "MOON_ME (mean Earth / polar axis, DE421), east longitude positive",
+ "method": {
+  "horizon": "72 directions per cell, from 15.2 km to 300 km every 7.6 km, observer 2 m above the ground, exact spherical geometry",
+  "visible": "area of the disc above a straight horizon line at the azimuth of the disc centre; Sun radius 0.2666 deg; Earth radius from its distance, seen from the cell",
+  "time": "every second hour of 2027 (4380 steps)",
+  "script": "tools/build_exposure.py"
+ },
+ "sources": {
+  "terrain": "data/globe/ldem_me_1440x720.bin (LOLA LDEM64, area means on 0.25 deg cells)",
+  "sky": "expiry-date/data/sky_2027_2066.bin (NASA JPL Horizons, DE441)"
+ },
+ "limits": "The ground is only as fine as the grid (7.6 km cells). Small permanently shadowed craters and lit rims near the poles are not resolved.",
+ "generated_utc": "2026-11-15T08:11:38Z",
+ "ai_note": "Prepared with AI assistance (Claude, Anthropic).",
+ "layers": [
+  {
+   "name": "sunlight",
+   "title": "Mean sunlight",
+   "file": "sunlight_2027_720x360.bin",
+   "width": 720,
+   "height": 360,
+   "year": 2027,
+   "dtype": "uint8, value / 255 = share of the disc in view, averaged over the year",
+   "note": "2027, every second hour. Ground: LOLA global grid, 7.6 km cells; features under 15 km are not resolved.",
+   "mean": 0.4841,
+   "sha256": "27de99186169e1a788c6d64dbab1f989f6b82b1495ae87846b2b1a29e6f0ac5f"
+  },
+  {
+   "name": "earth",
+   "title": "Earth in view",
+   "file": "earth_2027_720x360.bin",
+   "width": 720,
+   "height": 360,
+   "year": 2027,
+   "dtype": "uint8, value / 255 = share of the disc in view, averaged over the year",
+   "note": "2027, every second hour. Ground: LOLA global grid, 7.6 km cells; features under 15 km are not resolved.",
+   "mean": 0.4804,
+   "sha256": "22053266fd89819cc171a92c5cbb4413ac75ab7b223f47825110b2233e3bbd20"
+  }
+ ]
+}

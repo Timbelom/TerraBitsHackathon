@@ -1,95 +1,171 @@
 // Info cards for markers on the landing-page Moon. A click on a marker opens a card beside the Moon,
 // joined to its marker by a thin line. The card shows the site's name (a field: type to rename any point;
-// empty gives the original name back) and, for the simulated time of the
-// scene: sub-solar and sub-Earth point, elevation of Sun and Earth, and the time until the next
-// sunrise/sunset and earthrise/earthset. Values come from siteSky (lunar-sky.js): analytic model,
-// smooth sphere, disc centre, no terrain. Several cards can be open to compare sites.
-// Placement: a card opens on the side of the Moon its site is on, outside the disc, at the height of
-// the site; it moves up or down, then to the other side, then further out, until it overlaps no other
-// card and its line does not run under another card. Cards can be dragged (or moved with the arrow keys); a moved card stays where it was put.
+// empty gives the original name back) and three groups of values:
+//   Sun and Earth at the simulated time: sub-point, elevation of the disc centre, height of the horizon in
+//     that direction, visible share of the disc, time until it next passes 50 % (rise or set)
+//   the time span (Start to Stop, or the next 24 h when none is set): share of the hours with the Sun and with
+//     the Earth in view, the longest stretch without each, against the limits of the sidebar that are set
+//   what the numbers rest on: the ground line under the coordinates (5 m site profile, LDEM64, global grid, smooth sphere)
+//   the delay row: 30 squares for the landing delayed by 0 to 29 days (core/delay.js), filled where the limits
+//     that are set hold over the whole mission, and one sentence with the days of delay the site tolerates.
+//     The mission is the time span (landing = Start, length = Stop - Start); with no span set it lands at the
+//     simulated time (to the hour) and lasts 10 days. A click on a square moves the landing to that day (setTime).
+//     On coarse ground the squares are hatched and the sentence says so instead of naming a number of days.
+// All values come from core/visibility.js with the horizon that ui/site-data.js has for the point; when
+// better ground arrives (a terrain block has loaded) the numbers are redone. Several cards can be open to
+// compare sites. "View terrain" opens the terrain view around the point.
+// Placement: all cards are arranged together (plan()): in columns left and right of the Moon, each card on the
+// side its site is on where there is room, in a column ordered like the sites from top to bottom, clear of the
+// time bar, the plot and the legend. The arrangement is redone when a card comes or goes, when the Moon is turned or
+// zoomed and when a panel moves; cards glide to their new places. When there is no free place for every card the
+// page zooms out (fit() says how far). Cards can be dragged (or moved with the arrow keys); a moved card stays
+// where it was put and the others keep clear of it.
 // While a site is behind the limb its marker, line and card are hidden; the card comes back with the site
-// (a card that was not moved by hand then looks for its place again). "View terrain" is a placeholder.
-import { siteSky, DAY_MS } from './lunar-sky.js';
+// (a card that was not moved by hand then looks for its place again).
+import { dp, onScale } from './ui/scale.js';
+import { siteSky, DAY_MS } from './core/sky.js';
+import { siteState, nextChange, spanMetrics, basisLabel, IN_VIEW, HOUR_MS } from './core/visibility.js';
+import { delayTable, delayVerdict, delayText, delayStep, DELAY_DAYS, DEFAULT_MISSION_MS } from './core/delay.js';
 import { coordText } from './landing-pins.js';
 
-// Rise and set are searched in 2 h steps for 60 days, then in 12 h steps up to 19 years (one cycle of the
-// lunar nodes, so every libration state has occurred). Nothing found in that time is shown as "never".
-const HOUR = 3600000, SEARCH_MS = 19 * 365.25 * DAY_MS, FINE_MS = 60 * DAY_MS, REFRESH_MS = 200;
-const GAP = 48, BETWEEN = 12, EDGE = 16, TOP = 93, LEFT = 72;   // px; TOP clears the header, LEFT the Parameters tab
+// Rise and set (the disc passing 50 %) are searched hourly for 60 days, then in 6 h steps up to 19 years (one
+// cycle of the lunar nodes, so every libration state has occurred). Nothing found in that time is shown as "never".
+const HOUR = HOUR_MS, SEARCH_MS = 19 * 365.25 * DAY_MS, REFRESH_MS = 200;
+const MAX_SAMPLES = 9000;                                        // span metrics: hourly up to a year, coarser steps beyond
+let LINE_CLEAR, LINE_PAST, GAP, BETWEEN, EDGE, TOP, LEFT;   // design px times dp(), see ui/scale.js
+onScale(k => { LINE_CLEAR = 5 * k; LINE_PAST = 14 * k; GAP = 48 * k; BETWEEN = 12 * k; EDGE = 16 * k; TOP = 93 * k; LEFT = 72 * k; });
+//                            // px; a line keeps this far from other cards, and turns this far past them
+//   // px; TOP clears the header, LEFT the Parameters tab
+// The header is 85 px high, 119 px in windows from 1280 px (landing-search.css): cards and table start below whichever it is.
+const headTop = () => Math.max(TOP, (document.querySelector('.site-header')?.offsetHeight ?? 0) + EDGE / 2);
 const CLOSE_SVG = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8"/></svg>';
-const ROWS = '<dl><dt>Sub-solar point</dt><dd data-f="sunSub"></dd><dt>Solar elevation</dt><dd data-f="sunEl"></dd><dt data-f="sunLab"></dt><dd data-f="sunIn"></dd></dl>'
-  + '<dl><dt>Sub-Earth point</dt><dd data-f="earthSub"></dd><dt>Earth elevation</dt><dd data-f="earthEl"></dd><dt data-f="earthLab"></dt><dd data-f="earthIn"></dd></dl>';
+const body = (word, id) => '<dl><dt>Sub-' + (id === 'sun' ? 'solar' : 'Earth') + ' point</dt><dd data-f="' + id + 'Sub"></dd><dt>' + (id === 'sun' ? 'Solar' : 'Earth') + ' elevation</dt><dd data-f="' + id + 'El"></dd>'
+  + '<dt>' + word + '\u2019s disk in view</dt><dd data-f="' + id + 'Frac"></dd><dt data-f="' + id + 'Lab"></dt><dd data-f="' + id + 'In"></dd></dl>';
+const ROWS = body('Sun', 'sun') + body('Earth', 'earth')
+  + '<p class="card-span" data-f="span"></p><dl class="card-limits"><dt>Illuminated</dt><dd data-f="sunShare"></dd><dt>Longest eclipse</dt><dd data-f="sunGap"></dd>'
+  + '<dt>DTE available</dt><dd data-f="earthShare"></dd><dt>Longest DTE outage</dt><dd data-f="earthGap"></dd></dl>';
 const clamp = (v, a, b) => Math.max(a, Math.min(v, Math.max(a, b)));
 const point = p => Math.abs(p[0]).toFixed(1) + '° ' + (p[0] < 0 ? 'S' : 'N') + ', ' + p[1].toFixed(1) + '° E';
 const angle = d => (d < 0 ? '−' : '+') + Math.abs(d).toFixed(1) + '°';
 const span = ms => { const h = Math.floor(ms / HOUR); return Math.floor(h / 24) + ' d ' + h % 24 + ' h'; };
-
-/** UTC time (ms) of the next change of sign of an elevation (key of siteSky) between ms and endMs, or null. */
-export function nextCrossing(ms, lat, lon, key, endMs = ms + SEARCH_MS) {
-  const up = siteSky(ms, lat, lon)[key] > 0;
-  for (let a = ms, t = ms + 2 * HOUR; a < endMs; a = t, t += (t - ms < FINE_MS ? 2 : 12) * HOUR) {
-    if ((siteSky(t, lat, lon)[key] > 0) === up) continue;
-    let lo = a, hi = t;
-    while (hi - lo > 60000) { const m = (lo + hi) / 2; if ((siteSky(m, lat, lon)[key] > 0) === up) lo = m; else hi = m; }
-    return hi;
-  }
-  return null;
-}
+const day = ms => new Date(ms).toISOString().slice(0, 10);
+const stamp = ms => new Date(ms).toISOString().slice(0, 16).replace('T', ' ');
+// The ground line of a card: what the horizon of the point rests on, in a few words (the full name is its title).
+// The global grid and the smooth sphere are coarse: they miss the nearby relief that decides rise and set.
+const GROUND = { profile: '5 m site profile', block: 'LDEM64', globe: 'global grid, 7.6 km', smooth: 'smooth sphere' };
+const isCoarse = basis => basis === 'globe' || basis === 'smooth';
+// The delay row: one button per day of delay; the arrow keys move along the row, so a card adds one tab stop.
+const DELAY = '<div class="card-delay"><div class="card-delay-days" role="group" aria-label="Landing delayed by 0 to ' + (DELAY_DAYS - 1) + ' days">'
+  + Array.from({ length: DELAY_DAYS }, (_, k) => '<button type="button" class="card-day" data-k="' + k + '" tabindex="' + (k ? -1 : 0) + '"></button>').join('') + '</div><p class="card-delay-text"><span></span><b></b></p></div>';
+const hours = (h, open) => (open ? '≥ ' : '') + (h < 100 ? h.toFixed(1) : Math.round(h)) + ' h';
+const length = ms => ms % DAY_MS ? ms < DAY_MS ? +(ms / HOUR).toFixed(1) + ' h' : span(ms) : ms / DAY_MS + ' d';   // mission length: "10 d", "9 d 12 h", "6 h"
+const groundName = g => g.basis === 'block' && Math.abs((g.horizon?.pixelM ?? 473.8) - 473.8) > 5 ? basisLabel('block', g.horizon.pixelM) : GROUND[g.basis];
 
 /** hero: the hero element (cards live in it); pins: createPins api; now(): simulated UTC ms; disc(): Moon on screen {x, y, r} in hero px;
- *  avoid(): a rectangle {x, y, w, h} in hero px that new cards keep clear of (the time series panel), or null. */
-export function createCards({ hero, pins, now, disc, avoid }) {
+ *  avoid(): rectangles {x, y, w, h} in hero px the cards keep clear of (time series panel, time bar, legend), nulls allowed;
+ *  ground(site): the point for the calculation, from ui/site-data.js get(site, true); groundVersion(): changes when any ground changed;
+ *  window(): { a, b, free } the UTC span the metrics cover (free: the 24 h from the simulated time); limits(): { dark, dte } in hours, null = off; onTerrain(site): "View terrain" was pressed;
+ *  setTime(ms): a square of the delay row was pressed, the landing moves to that UTC time. */
+export function createCards({ hero, pins, now, disc, avoid, ground, groundVersion, window: spanWindow, limits, onTerrain, setTime }) {
   const NS = 'http://www.w3.org/2000/svg';
   const lines = document.createElementNS(NS, 'svg'); lines.setAttribute('class', 'card-lines'); lines.setAttribute('aria-hidden', 'true');
   const root = document.createElement('div'); root.className = 'cards';
   hero.append(lines, root);
   const cards = new Map();                       // site id -> card
   let lastFill = 0;
+  const still = matchMedia('(prefers-reduced-motion: reduce)');
+  let docked = null, dockTop = headTop();                // see dock() below
+  let tabled = false;                              // see table() below
   pins.onOpen = s => cards.has(s.id) ? close(s.id) : open(s);
   pins.onClose = id => close(id);
 
-  function bounds() { return { l: LEFT, t: TOP, r: hero.clientWidth - EDGE, b: hero.clientHeight - EDGE }; }
+  function bounds() { return { l: LEFT, t: headTop(), r: hero.clientWidth - EDGE, b: hero.clientHeight - EDGE }; }
   function moveTo(c, x, y) {
     const B = bounds();
     c.x = clamp(x, Math.min(B.l, EDGE), B.r - c.w); c.y = clamp(y, B.t, B.b - c.h);
+    c.tx = c.x; c.ty = c.y;
     c.el.style.transform = 'translate(' + Math.round(c.x) + 'px,' + Math.round(c.y) + 'px)';
   }
-  /** Area this rectangle shares with the other cards (each grown by the gap between cards). */
-  function taken(c, x, y) {
-    let a = 0;
-    const v = avoid?.();
-    if (v) a += Math.max(0, Math.min(x + c.w, v.x + v.w + BETWEEN) - Math.max(x, v.x - BETWEEN)) * Math.max(0, Math.min(y + c.h, v.y + v.h + BETWEEN) - Math.max(y, v.y - BETWEEN));
-    for (const o of cards.values()) if (o !== c && !o.el.hidden)
-      a += Math.max(0, Math.min(x + c.w, o.x + o.w + BETWEEN) - Math.max(x, o.x - BETWEEN)) * Math.max(0, Math.min(y + c.h, o.y + o.h + BETWEEN) - Math.max(y, o.y - BETWEEN));
-    return a;
+  /** Glide to x, y: the card moves there over the next frames (update()). */
+  function glide(c, x, y) {
+    const B = bounds();
+    c.tx = clamp(x, Math.min(B.l, EDGE), B.r - c.w); c.ty = clamp(y, B.t, B.b - c.h);
+    if (c.fresh || still.matches) { c.fresh = false; moveTo(c, c.tx, c.ty); }      // a new card appears in its place
   }
-  /** Does the line from the site to a card at x, y run under another card? */
-  function crossed(c, sx, sy, x, y) {
-    const ex = clamp(sx, x, x + c.w), ey = clamp(sy, y, y + c.h);
-    for (const o of cards.values()) if (o !== c && !o.el.hidden) for (let i = 1; i < 16; i++) {
-      const px = sx + (ex - sx) * i / 16, py = sy + (ey - sy) * i / 16;
-      if (px > o.x && px < o.x + o.w && py > o.y && py < o.y + o.h) return true;
-    }
-    return false;
+  /** What the cards keep clear of: the panels the page names (avoid()) and the cards moved by hand. */
+  function obstacles() {
+    const v = avoid?.(), out = (Array.isArray(v) ? v : [v]).filter(Boolean);
+    for (const c of cards.values()) if (!c.el.hidden && (c.manual || c.held)) out.push(c);
+    return out;
   }
-  function place(c) {
-    const d = disc(), B = bounds(), s = c.site, sx = s.vis ? s.x : d.x, sy = s.vis ? s.y : d.y;
-    const pref = sx < d.x ? -1 : 1, y0 = d.y + (sy - d.y) * 1.3 - c.h / 2;      // a little further out than the site
-    let best = null;
-    const tryAt = (x, y, cost) => { cost += taken(c, x, y) + Math.abs(y - y0) + (crossed(c, sx, sy, x, y) ? 300 : 0); if (!best || cost < best.cost) best = { x, y, cost }; };
-    for (const side of [pref, -pref]) for (let col = 0; col < 2; col++) {
-      const x = side < 0 ? d.x - d.r - GAP - c.w - col * (c.w + BETWEEN) : d.x + d.r + GAP + col * (c.w + BETWEEN);
-      if (x < B.l || x + c.w > B.r) continue;
-      for (let n = 0; n < 60; n++) tryAt(x, clamp(y0 + (n % 2 ? 1 : -1) * Math.ceil(n / 2) * 24, B.t, B.b - c.h), (side !== pref ? 400 : 0) + col * 600);
+  /**
+   * All cards that were not moved by hand, arranged together beside a Moon disc d. k scales the sites' offsets from
+   * the disc centre (1 = as on screen; smaller = the Moon as it would be after zooming out).
+   *   Columns stand left and right of the disc, the nearest first. A column ends above or below a panel in its way.
+   *   Sites further left go to the left, the others to the right; the split uses as few columns as possible and
+   *   otherwise follows the side each site is on.
+   *   In a column the cards stand in the order of their sites from top to bottom, as one block at the height of
+   *   the Moon's centre, so the lines to the markers do not cross and the columns line up.
+   * Returns the places [card, { x, y }] and over: the number of cards there is no free place for.
+   */
+  function plan(d, k) {
+    const cur = disc(), B = bounds(), obs = obstacles(), out = [];
+    const auto = [...cards.values()].filter(c => !c.el.hidden && !c.manual && !c.held).map(c => {
+      const s = c.site; return { c, sx: s.vis ? d.x + (s.x - cur.x) * k : d.x, sy: s.vis ? d.y + (s.y - cur.y) * k : d.y };
+    });
+    const n = auto.length; if (!n) return { out, over: 0 };
+    const w = auto[0].c.w, H = Math.max(...auto.map(a => a.c.h)), mid = (B.t + B.b) / 2;
+    const columns = side => {
+      const cols = [];
+      for (let i = 0; i < 6; i++) {
+        const x = side < 0 ? d.x - d.r - GAP - w - i * (w + BETWEEN) : d.x + d.r + GAP + i * (w + BETWEEN);
+        if (x < B.l || x + w > B.r) break;
+        let t = B.t, b = B.b;
+        for (const o of obs) if (o.x < x + w + BETWEEN && o.x + o.w > x - BETWEEN) { if (o.y + o.h / 2 < mid) t = Math.max(t, o.y + o.h + BETWEEN); else b = Math.min(b, o.y - BETWEEN); }
+        cols.push({ x, t, b, cap: Math.max(0, Math.floor((b - t + BETWEEN) / (H + BETWEEN))), items: [] });
+      }
+      return cols;
+    };
+    const L = columns(-1), R = columns(1), room = cs => cs.reduce((m, c) => m + c.cap, 0);
+    const used = (cs, m) => { let i = 0; for (; i < cs.length && m > 0; i++) m -= cs[i].cap; return m > 0 ? Infinity : i; };   // columns needed for m cards
+    auto.sort((a, b) => a.sx - b.sx);
+    const natural = auto.filter(a => a.sx < d.x).length;
+    let nL = -1, best = Infinity;
+    for (let i = 0; i <= n; i++) { const cost = Math.max(used(L, i), used(R, n - i)) * 1000 + Math.abs(i - natural); if (cost < best) { best = cost; nL = i; } }
+    const over = nL < 0 ? n - room(L) - room(R) : 0;
+    if (nL < 0) nL = Math.round(n * (room(L) + 1) / (room(L) + room(R) + 2));          // no room for all: share them out, they will overlap
+    for (const [cs, list, side] of [[L, auto.slice(0, nL), -1], [R, auto.slice(nL), 1]]) {
+      if (!list.length) continue;
+      list.sort((a, b) => a.sy - b.sy);
+      let m = list.length, nc = 0; for (; nc < cs.length && m > 0; nc++) m -= cs[nc].cap;
+      let use = cs.slice(0, nc).filter(c => c.cap > 0);
+      if (!use.length) use = [{ x: side < 0 ? B.l : B.r - w, t: B.t, b: B.b, cap: Infinity, items: [] }];   // no column fits: along the edge
+      let ci = 0;                                                            // dealt round the columns, each stays ordered by height
+      for (const a of list) { for (let tries = 0; tries < use.length && use[ci % use.length].items.length >= use[ci % use.length].cap; tries++) ci++; use[ci++ % use.length].items.push(a); }
+      for (const col of use) {
+        if (!col.items.length) continue;
+        const S = col.items.reduce((h, a) => h + a.c.h, 0) + BETWEEN * (col.items.length - 1);
+        let y = clamp(d.y - S / 2, col.t, col.b - S);                       // the block stands at the height of the Moon, so the columns line up
+        for (const a of col.items) { out.push([a.c, { x: col.x, y }]); y += a.c.h + BETWEEN; }
+      }
     }
-    // No room beside the Moon (narrow window): along the edge on the site's side, wherever least is covered.
-    if (!best) for (let n = 0; n < 60; n++) tryAt(pref < 0 ? B.l : B.r - c.w, clamp(B.b - c.h - n * 24, B.t, B.b - c.h), 0);
-    moveTo(c, best.x, best.y);
+    return { out, over };
+  }
+  /** Arrange the cards again for the Moon as it is on screen now. */
+  function relayout() { if (docked || !cards.size) return; for (const [c, b] of plan(disc(), 1).out) glide(c, b.x, b.y); }
+  /** The largest Moon radius on screen (px, not above the present one, not below rMin) at which every card has a
+   *  free place; null when that is so already. */
+  function fit(rMin) {
+    const d = disc();
+    if (docked || !cards.size || !plan(d, 1).over) return null;
+    for (let r = d.r * .94; r > rMin; r *= .94) if (!plan({ x: d.x, y: d.y, r }, r / d.r).over) return r;
+    return rMin;
   }
 
   function open(s) {
     const el = document.createElement('section'); el.className = 'card'; el.tabIndex = 0;
-    el.innerHTML = '<header><input type="text" class="card-name" aria-label="Name of this point" autocomplete="off" spellcheck="false"><button type="button" class="card-close" aria-label="Close">' + CLOSE_SVG + '</button></header><p class="card-sub"></p>' + ROWS + '<button type="button" class="card-terrain">View terrain</button>';
+    el.innerHTML = '<header><input type="text" class="card-name" aria-label="Name of this site" autocomplete="off" spellcheck="false"><button type="button" class="card-close" aria-label="Close">' + CLOSE_SVG + '</button></header><p class="card-sub"></p><p class="card-ground" data-f="ground"></p>' + ROWS + DELAY + '<button type="button" class="card-terrain">View terrain</button>';
+    el.querySelector('.card-terrain').addEventListener('click', () => onTerrain?.(s));
     const nameEl = el.querySelector('.card-name'), sub = el.querySelector('.card-sub'), base = s.base ??= s.name;
     const label = () => {
       nameEl.value = s.name; el.setAttribute('aria-label', s.name + ', Sun and Earth at this site');
@@ -102,21 +178,28 @@ export function createCards({ hero, pins, now, disc, avoid }) {
       e.stopPropagation();
       if (e.key === 'Enter') nameEl.blur(); else if (e.key === 'Escape') { nameEl.value = s.name; nameEl.blur(); }
     });
-    const line = document.createElementNS(NS, 'line'); lines.append(line);
-    const c = { site: s, el, line, f: {}, shown: {}, next: {}, x: 0, y: 0, w: 0, h: 0 };
+    const line = document.createElementNS(NS, 'polyline'); lines.append(line);
+    const c = { site: s, el, line, f: {}, shown: {}, tones: {}, rows: {}, next: {}, over: {}, gv: -1, mKey: '', m: null, x: 0, y: 0, tx: 0, ty: 0, w: 0, h: 0 };
     el.querySelectorAll('[data-f]').forEach(n => { c.f[n.dataset.f] = n; });
+    c.delay = el.querySelector('.card-delay'); c.days = [...el.querySelectorAll('.card-day')];
+    c.delay.addEventListener('click', e => { const b = e.target.closest('.card-day'); if (b && c.d) setTime?.(c.d.landingMs + b.dataset.k * DAY_MS); });
+    c.delay.addEventListener('keydown', e => {
+      const k = c.days.indexOf(e.target), to = c.days[k + ({ ArrowLeft: -1, ArrowRight: 1 }[e.key] ?? 0)];
+      if (k >= 0 && to && to !== e.target) { e.preventDefault(); e.target.tabIndex = -1; to.tabIndex = 0; to.focus(); }
+    });
     root.append(el); fill(c, now());
     c.w = el.offsetWidth; c.h = el.offsetHeight;
-    cards.set(s.id, c); pins.cards.add(s.id); place(c);
+    cards.set(s.id, c); pins.cards.add(s.id); c.fresh = true; relayout();
 
     el.querySelector('.card-close').addEventListener('click', () => close(s.id));
     let grab = null;
     el.addEventListener('pointerdown', e => {
       if (e.target.closest('button, input')) return;
+      c.held = true; moveTo(c, c.x, c.y);                                  // stays where it is while held
       grab = { dx: e.clientX - c.x, dy: e.clientY - c.y }; el.setPointerCapture(e.pointerId); el.classList.add('moving'); root.append(el);   // to the front
     });
     el.addEventListener('pointermove', e => { if (grab) { c.manual = true; moveTo(c, e.clientX - grab.dx, e.clientY - grab.dy); } });
-    const drop = () => { grab = null; el.classList.remove('moving'); };
+    const drop = () => { grab = null; c.held = false; el.classList.remove('moving'); };
     el.addEventListener('pointerup', drop); el.addEventListener('pointercancel', drop);
     el.addEventListener('keydown', e => {
       const d = { ArrowLeft: [-16, 0], ArrowRight: [16, 0], ArrowUp: [0, -16], ArrowDown: [0, 16] }[e.key];
@@ -126,23 +209,133 @@ export function createCards({ hero, pins, now, disc, avoid }) {
   }
   function close(id) {
     const c = cards.get(id); if (!c) return;
-    c.el.remove(); c.line.remove(); cards.delete(id); pins.cards.delete(id);
+    c.el.remove(); c.line.remove(); cards.delete(id); pins.cards.delete(id); relayout();
   }
 
   function set(c, k, text) { if (c.shown[k] !== text) { c.shown[k] = text; c.f[k].textContent = text; } }
+  /** Colour of a value: 'good', 'bad' or '' (no judgement). Only values a mission gains or suffers from carry one. */
+  function tone(c, k, t) { if (c.tones[k] !== t) { c.tones[k] = t; c.f[k].classList.toggle('good', t === 'good'); c.f[k].classList.toggle('bad', t === 'bad'); } }
+  /** Show or hide a row (the value and its label). */
+  function row(c, k, on) { if (c.rows[k] !== on) { c.rows[k] = on; c.f[k].hidden = !on; c.f[k].previousElementSibling.hidden = !on; } }
+  const st = { sun: {}, earth: {} };
   function fill(c, ms) {
-    const { lat, lon } = c.site, k = siteSky(ms, lat, lon);
-    set(c, 'sunSub', point(k.subSolar)); set(c, 'earthSub', point(k.subEarth));
-    set(c, 'sunEl', angle(k.sunElevDeg)); set(c, 'earthEl', angle(k.earthElevDeg));
-    for (const [body, key, word] of [['sun', 'sunElevDeg', 'Sun'], ['earth', 'earthElevDeg', 'Earth']]) {
-      let ev = c.next[body];
-      // "never" found from ev.from on: after a jump back only the stretch up to ev.from has to be searched
-      if (ev && !ev.at && ms < ev.from && !nextCrossing(ms, lat, lon, key, ev.from)) ev.from = ms;
-      if (!ev || ms < ev.from || ms >= ev.redo) { const at = nextCrossing(ms, lat, lon, key); ev = c.next[body] = { from: ms, at, redo: at ?? ms + SEARCH_MS / 2 }; }
-      const up = k[key] > 0;
-      set(c, body + 'Lab', ev.at ? word + (up ? 'set in' : 'rise in') : word);
-      set(c, body + 'In', ev.at ? span(ev.at - ms) : up ? 'never sets' : 'never rises');
+    const { lat, lon } = c.site, g = ground(c.site), site = g.site, k = siteState(ms, site, st), sub = siteSky(ms, lat, lon);
+    const gv = groundVersion();
+    if (c.gv !== gv) { c.gv = gv; c.next = {}; c.mKey = ''; c.dKey = ''; }    // the ground changed: rise, set, span and delay numbers are redone
+    set(c, 'sunSub', point(sub.subSolar)); set(c, 'earthSub', point(sub.subEarth));
+    // what the numbers rest on; when better ground has arrived the line is marked for a moment
+    const groundKey = g.basis + '|' + (g.horizon?.pixelM ?? '');
+    set(c, 'ground', 'Terrain data: ' + groundName(g) + (isCoarse(g.basis) ? ' (coarse)' : '') + (g.loading ? ', loading higher resolution' : ''));
+    if (c.groundKey !== groundKey) {
+      if (c.groundKey != null) { c.f.ground.classList.remove('changed'); void c.f.ground.offsetWidth; c.f.ground.classList.add('changed'); }
+      c.groundKey = groundKey; c.f.ground.title = basisLabel(g.basis, g.horizon?.pixelM);
     }
+    for (const [id, word] of [['sun', 'Sun'], ['earth', 'Earth']]) {
+      const b = k[id], up = b.frac >= IN_VIEW;
+      const above = b.el - b.horizon;                                  // disc centre above the skyline in that direction, as in the plot
+      set(c, id + 'El', angle(above)); tone(c, id + 'El', above > 0 ? 'good' : 'bad');
+      set(c, id + 'Frac', Math.round(b.frac * 100) + ' %'); tone(c, id + 'Frac', up ? 'good' : 'bad');
+      let ev = c.next[id];
+      // "never" found from ev.from on: after a jump back only the stretch up to ev.from has to be searched
+      if (ev && !ev.at && ms < ev.from && !nextChange(ms, site, id, ev.from)) ev.from = ms;
+      if (!ev || ms < ev.from || ms >= ev.redo) { const at = nextChange(ms, site, id, ms + SEARCH_MS); ev = c.next[id] = { from: ms, at, redo: at ?? ms + SEARCH_MS / 2 }; }
+      // No rise or set ahead: one row says it, the share of the disc is left out
+      row(c, id + 'Frac', !!ev.at);
+      set(c, id + 'Lab', ev.at ? word + (up ? 'set in' : 'rise in') : word);
+      set(c, id + 'In', ev.at ? span(ev.at - ms) : up ? 'always in view' : 'never in view'); tone(c, id + 'In', ev.at ? '' : up ? 'good' : 'bad');
+    }
+    // the time span: metrics once per span and ground, limits compared on every refresh
+    const w = spanWindow(), mKey = w.a + '|' + w.b;
+    if (c.mKey !== mKey) {
+      c.mKey = mKey;
+      const step = Math.max(1, Math.ceil((w.b - w.a) / HOUR / MAX_SAMPLES)) * HOUR;
+      c.m = spanMetrics(site, w.a, w.b, step); c.m.stepH = step / HOUR;
+    }
+    const m = c.m, lim = limits();
+    set(c, 'span', w.free ? 'Next 24 h' : day(m.startMs) + ' to ' + day(m.endMs) + ' UTC');
+    for (const [id, limit] of [['sun', lim.dark], ['earth', lim.dte]]) {
+      // limit null: that limit is off, the stretch is shown without a judgement. Compared unrounded, as the area on the Moon is.
+      const v = m[id], gap = v.longestGapHours, over = limit != null && gap > limit;
+      set(c, id + 'Share', (v.share * 100).toFixed(1) + ' % of ' + Math.round(v.hours) + ' h');
+      set(c, id + 'Gap', (v.longestGapOpen ? '≥ ' : '') + (gap < 100 ? gap.toFixed(1) : Math.round(gap)) + ' h' + (limit != null ? ' · limit ' + limit + ' h' : ''));
+      tone(c, id + 'Gap', limit == null ? '' : over ? 'bad' : 'good');
+      if (c.over[id] !== over) { c.over[id] = over; c.f[id + 'Gap'].title = over ? 'Exceeds the limit set in the sidebar' : ''; }
+    }
+    // the delay row: the table once per landing, mission and ground (a new card at once, otherwise one card per frame, see update()); the limits only colour it
+    c.dWant = w.a + '|' + (w.free ? DEFAULT_MISSION_MS : w.b - w.a);
+    if (!c.d) delay(c);
+    paintDelay(c, g.basis, lim);
+  }
+  /** The delay table of a card for the landing and mission its key names. */
+  function delay(c) {
+    const [a, len] = c.dWant.split('|').map(Number);
+    c.dKey = c.dWant; c.d = delayTable(ground(c.site).site, a, len, delayStep(len)); c.dN = (c.dN ?? 0) + 1;
+  }
+  /** Squares and sentence of the delay row from the table, the limits and the kind of ground; redone only when one of them changed. */
+  function paintDelay(c, basis, lim) {
+    const t = c.d, coarse = isCoarse(basis), key = c.dN + '|' + lim.dark + '|' + lim.dte + '|' + coarse;
+    if (c.dShown === key) return; c.dShown = key;
+    const v = delayVerdict(t, lim), [lead, text] = c.delay.lastChild.children, dur = length(t.missionMs);
+    c.delay.classList.toggle('coarse', coarse); c.delay.firstChild.hidden = !v;
+    c.verdict = v;
+    lead.textContent = v ? dur + ' mission: ' : '';
+    text.textContent = !v ? 'Set a limit in the sidebar to see how much delay this site tolerates.' : coarse ? 'coarse terrain data: open the terrain view for a reliable result' : delayText(v);
+    text.className = !v || coarse || v.holds === 0 ? 'plain' : v.holds < 0 ? 'bad' : 'good';   // no slack at all is neither in the site's favour nor against it
+    c.delay.title = 'Landing ' + stamp(t.landingMs) + ' UTC, delayed by 0 to ' + (t.days - 1) + ' days; mission of ' + dur + '. A day is feasible when the limits set in the sidebar are met over the whole mission.'
+      + (t.stepMs > HOUR ? ' Sampled every ' + t.stepMs / HOUR + ' h.' : '');
+    if (!v) return;
+    c.days.forEach((b, k) => {
+      const say = '+' + k + ' d, landing ' + stamp(t.landingMs + k * DAY_MS) + ' UTC: longest eclipse ' + hours(t.dark[k], t.darkOpen[k]) + ', longest DTE outage ' + hours(t.outage[k], t.outageOpen[k])
+        + (v.ok[k] ? ', within the limits' : ', exceeds a limit');
+      b.classList.toggle('bad', !v.ok[k]); b.title = say; b.setAttribute('aria-label', say);
+    });
+  }
+
+  // Docked: in the terrain view there is no Moon to stand beside. Only the card of that site is shown, top left,
+  // without a line; the others wait until the view is left.
+  function dock(id, top = headTop()) {
+    docked = id; dockTop = top;
+    for (const c of cards.values()) { c.el.hidden = true; c.line.style.display = 'none'; c.docked = false; }   // every card finds its place again
+  }
+
+  /** Does the segment from x1, y1 to x2, y2 pass through the card o (with a margin of m px around it)? */
+  function crosses(x1, y1, x2, y2, o, m) {
+    const dx = x2 - x1, dy = y2 - y1;
+    let t0 = 0, t1 = 1;
+    for (const [p, q] of [[-dx, x1 - (o.x - m)], [dx, o.x + o.w + m - x1], [-dy, y1 - (o.y - m)], [dy, o.y + o.h + m - y1]]) {
+      if (p === 0) { if (q < 0) return false; continue; }
+      const r = q / p;
+      if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; } else { if (r < t0) return false; if (r < t1) t1 = r; }
+    }
+    return true;
+  }
+  /**
+   * The line from a card to its site s, as x, y pairs from the card to the site; null when the card lies on the site.
+   * Straight from the nearest point of the card, unless another card lies on that way (a card in an outer column
+   * behind one in an inner column). Then the line leaves the card level, at a height where it passes above or below
+   * the cards in between, and turns to the site once it is past them. No free way: the straight line.
+   */
+  function route(c, s) {
+    const x = clamp(s.x, c.x, c.x + c.w), y = clamp(s.y, c.y, c.y + c.h);              // nearest point of the card
+    if (x === s.x && y === s.y) return null;
+    const others = []; for (const o of cards.values()) if (o !== c && !o.el.hidden) others.push(o);
+    const hit = (x1, y1, x2, y2) => others.some(o => crosses(x1, y1, x2, y2, o, LINE_CLEAR));
+    const side = s.x < c.x ? -1 : s.x > c.x + c.w ? 1 : 0;
+    if (!side || !hit(x, y, s.x, s.y)) return [x, y, s.x, s.y];
+    const ex = side < 0 ? c.x : c.x + c.w;                                              // the edge that faces the site
+    let wx = ex;                                                                        // where the line is past the cards in between
+    for (const o of others) {
+      if (side > 0 ? o.x + o.w > ex && o.x < s.x : o.x < ex && o.x + o.w > s.x) wx = side > 0 ? Math.max(wx, o.x + o.w + LINE_PAST) : Math.min(wx, o.x - LINE_PAST);
+    }
+    if (side > 0 ? wx >= s.x : wx <= s.x) return [x, y, s.x, s.y];                      // the site itself lies under a card
+    const lo = c.y + LINE_CLEAR, hi = c.y + c.h - LINE_CLEAR;
+    for (let d = 0; d <= hi - lo; d += 2) {                                             // heights on the edge, the nearest to the straight line first
+      for (const yy of d ? [y - d, y + d] : [y]) {
+        if (yy < lo || yy > hi) continue;
+        if (!hit(ex, yy, wx, yy) && !hit(wx, yy, s.x, s.y)) return [ex, yy, wx, yy, s.x, s.y];
+      }
+    }
+    return [x, y, s.x, s.y];
   }
 
   /** Call once per frame after pins.update(). */
@@ -150,19 +343,76 @@ export function createCards({ hero, pins, now, disc, avoid }) {
     if (!cards.size) return;
     const t = performance.now(), refresh = t - lastFill > REFRESH_MS, ms = now();
     if (refresh) lastFill = t;
+    // delay tables that are out of date (landing, mission or ground changed): one card per frame, so many cards do not hold up a frame
+    for (const c of cards.values()) if ((tabled || !c.el.hidden) && c.d && c.dKey !== c.dWant) { delay(c); paintDelay(c, ground(c.site).basis, limits()); break; }
+    if (tabled && !docked) {                                                             // shown as a table instead (landing-compare.js): kept up to date, not on screen
+      for (const c of cards.values()) { if (!c.el.hidden) { c.el.hidden = true; c.line.style.display = 'none'; } if (refresh) fill(c, ms); }
+      return;
+    }
+    if (docked) {
+      const c = cards.get(docked); if (!c) return;
+      if (c.el.hidden) { c.el.hidden = false; fill(c, ms); }
+      if (refresh) { fill(c, ms); c.h = c.el.offsetHeight; }
+      if (!c.docked) { c.docked = true; moveTo(c, LEFT, dockTop); } else if (refresh) moveTo(c, c.x, c.y);
+      return;
+    }
+    let again = refresh;
     for (const c of cards.values()) {
-      const s = c.site, vis = !!s.vis;
+      const vis = !!c.site.vis;
       if (c.el.hidden === vis) {                                                         // the site went behind the limb or came back
-        c.el.hidden = !vis; c.line.style.display = vis ? '' : 'none';
-        if (vis) { fill(c, ms); if (!c.manual) place(c); }
+        c.el.hidden = !vis; c.line.style.display = vis ? '' : 'none'; again = true;
+        if (vis) { fill(c, ms); c.fresh = !c.manual; }
       }
-      if (!vis) continue;
-      if (refresh) { fill(c, ms); c.h = c.el.offsetHeight; moveTo(c, c.x, c.y); }      // also keeps cards inside a resized window
-      const x = clamp(s.x, c.x, c.x + c.w), y = clamp(s.y, c.y, c.y + c.h);   // nearest point of the card
-      const on = x !== s.x || y !== s.y;                                                 // no line when the card lies on its site
-      c.line.style.display = on ? '' : 'none';
-      if (on) { c.line.setAttribute('x1', s.x.toFixed(1)); c.line.setAttribute('y1', s.y.toFixed(1)); c.line.setAttribute('x2', x.toFixed(1)); c.line.setAttribute('y2', y.toFixed(1)); }
+      if (vis && refresh) { fill(c, ms); c.h = c.el.offsetHeight; if (c.manual) moveTo(c, c.x, c.y); }   // also keeps moved cards inside a resized window
+    }
+    // The arrangement follows the sites, the panels and the window: redone a few times a second and whenever a card comes or goes
+    if (again) relayout();
+    for (const c of cards.values()) {
+      const s = c.site;
+      if (!s.vis) continue;
+      if (c.x !== c.tx || c.y !== c.ty) {                                                // on the way to its place
+        const nx = c.x + (c.tx - c.x) * .2, ny = c.y + (c.ty - c.y) * .2, there = Math.abs(c.tx - nx) < .5 && Math.abs(c.ty - ny) < .5;
+        c.x = there ? c.tx : nx; c.y = there ? c.ty : ny;
+        c.el.style.transform = 'translate(' + Math.round(c.x) + 'px,' + Math.round(c.y) + 'px)';
+      }
+      const pts = route(c, s);                                                           // no line when the card lies on its site
+      c.line.style.display = pts ? '' : 'none';
+      if (pts) c.line.setAttribute('points', pts.map(v => v.toFixed(1)).join(' '));
     }
   }
-  return { update, open, close };
+  /**
+   * The numbers of the open cards, for the comparison (landing-compare.js): per card id and name of the site, the span the
+   * numbers cover (startMs, endMs, free), sun and earth as in spanMetrics() (share, longestGapHours, longestGapOpen), the
+   * mission of the delay row (landingMs, missionMs) with its verdict (delay: { holds, all }, null with no limit set), and the
+   * ground (basis, ground: its name on the card, coarse). A card that is not on screen (its site behind the limb, or
+   * another card docked in the terrain view) is brought up to date first.
+   */
+  function metrics() {
+    const ms = now(), free = !!spanWindow().free, out = [];
+    for (const c of cards.values()) {
+      if (c.el.hidden) { fill(c, ms); if (c.dKey !== c.dWant) { delay(c); paintDelay(c, ground(c.site).basis, limits()); } }
+      const g = ground(c.site), v = c.verdict;
+      out.push({ id: c.site.id, name: c.site.name, free, startMs: c.m.startMs, endMs: c.m.endMs, sun: c.m.sun, earth: c.m.earth, landingMs: c.d.landingMs, missionMs: c.d.missionMs,
+        delay: v ? { holds: v.holds, all: v.all } : null, basis: g.basis, ground: groundName(g), coarse: isCoarse(g.basis) });
+    }
+    return out;
+  }
+  /** Table mode: the cards leave the screen (with their lines) while the comparison shows their values as a table; off brings them back to their places. */
+  function table(on) {
+    if (tabled === on) return; tabled = on; lastFill = 0;
+    if (!on) for (const c of cards.values()) { c.el.hidden = true; c.fresh = !c.manual; }     // update() shows each card whose site is in view again
+  }
+  /**
+   * What every open card shows, for the table: id, name and coordinates of the site, and per field of the card (the data-f
+   * keys: ground, sunSub, sunEl, ... earthGap, span) its text, its judgement ('good', 'bad' or '') and off (the row is left out
+   * on the card); delay: the card's delay row (element, to be copied) with key (changes when the row was repainted) and pick(k),
+   * a click on day k.
+   */
+  function snapshot() {
+    return [...cards.values()].map(c => {
+      const f = {}; for (const k in c.f) f[k] = { text: c.shown[k] ?? '', tone: c.tones[k] ?? '', off: c.rows[k] === false };
+      return { id: c.site.id, name: c.site.name, coord: c.site.name !== coordText(c.site) ? coordText(c.site) : '', f, delay: { el: c.delay, key: c.dShown, pick: k => c.days[k].click() } };
+    });
+  }
+  return { update, open, close, dock, relayout, fit, metrics, table, snapshot, count: () => cards.size, has: id => cards.has(id) };
 }

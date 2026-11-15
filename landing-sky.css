@@ -1,0 +1,29 @@
+/* Sky view (landing-sky.js). The panel is a .series panel (surface, header, close button, empty line and the plot's
+   grid, axis and tick styles come from landing-series.css); here only what the sky plot adds. Values from tokens.css;
+   the two body colours are data colours set by the script. A body is told from the other by its name beside the disc
+   and in the table, and "behind the terrain" by dashes, not by colour alone. */
+.sky-site{display:flex;flex-wrap:wrap;align-items:center;gap:0 var(--s3);margin:var(--s2) 0 0}
+.sky-site strong{font-weight:600}
+.sky-site span{color:var(--text-muted)}
+.sky-site select{height:calc(36 * var(--dp));max-width:100%;padding:0 var(--s2);background:var(--field);border:1px solid transparent;border-radius:var(--r-inner);color:var(--text);font:600 calc(16 * var(--dp)) var(--font-ui);color-scheme:dark;cursor:pointer}
+.sky-site select:hover{background:var(--surface-hover)}
+.sky-site select:focus-visible{outline:calc(2 * var(--dp)) solid var(--accent);outline-offset:0}
+.sky-site [hidden]{display:none}
+.sky-plot{display:block;width:100%;height:calc(260 * var(--dp));margin-top:var(--s2)}
+.sky-ground{fill:var(--text);fill-opacity:.16;stroke:none}
+.sky-line{fill:none;stroke:var(--text);stroke-width:1.5;stroke-linejoin:round}
+.sky-course{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.sky-course.sky-behind{stroke-width:1.5;stroke-opacity:.55;stroke-dasharray:2 5}
+.sky-ring{fill:none;stroke-width:1.5;stroke-dasharray:3 3}
+.sky-disc{stroke:none}
+.sky-label{font-weight:600;paint-order:stroke;stroke:#111214;stroke-width:calc(3 * var(--dp));stroke-linejoin:round}
+.sky-values{width:100%;margin-top:var(--s2);border-collapse:collapse;font-variant-numeric:tabular-nums;line-height:1.75}
+.sky-values th,.sky-values td{padding:0;text-align:right;font-weight:600;white-space:nowrap}
+.sky-values thead th{font-weight:400;color:var(--text-muted)}
+.sky-values tbody th{text-align:left;font-weight:400}
+.sky-values i{display:inline-block;width:calc(12 * var(--dp));height:calc(12 * var(--dp));margin-right:var(--s2);border-radius:50%}
+.sky-note{margin:var(--s1) 0 0;color:var(--text-muted)}
+.sky-note[hidden]{display:none}
+.series.sky.empty .sky-site,.series.sky.empty .sky-plot,.series.sky.empty .sky-values,.series.sky.empty .sky-note{display:none}
+/* Header with five entries: closer together where the row is short, so the search field keeps its room. */
+@container (max-width:clamp(974.4px,min(78.073vw,157.789vh),2998px)){.site-header nav{gap:clamp(calc(14 * var(--dp)),2.4cqw,calc(36 * var(--dp)))}}

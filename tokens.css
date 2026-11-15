@@ -10,21 +10,25 @@
   --surface-hover:rgb(255 255 255 / .09);
   --text:#f4f5f8;
   --text-muted:#b3b7bd;  /* secondary text; never go dimmer for text */
+  --good:#6fd6a0;  /* a value in the mission's favour (Sun or Earth in view, gap within its limit) */
+  --bad:#ff8a7f;  /* a value against it, warnings */
   --accent:#eceef1;  /* no accent colour for now: active state, focus and fills are near-white */
   --accent-ink:#111214;  /* marks on top of the active fill */
   /* type: Inter for all tool UI (labels, values, units), Jost only for the landing headline, no monospace */
   --font-display:'Jost','DM Sans',Arial,sans-serif;
   --font-ui:'Inter','Helvetica Neue',Arial,sans-serif;
+  /* scale: one px of the 1920 x 950 drawing in this window (ui/scale.js has the same numbers). Sizes are multiples of it. */
+  --dp:clamp(.65px,min(calc(100vw / 1920),calc(100vh / 950)),2px);
   /* spacing scale */
-  --s1:4px;--s2:8px;--s3:12px;--s4:16px;--s5:24px;--s6:32px;
+  --s1:calc(4 * var(--dp));--s2:calc(8 * var(--dp));--s3:calc(12 * var(--dp));--s4:calc(16 * var(--dp));--s5:calc(24 * var(--dp));--s6:calc(32 * var(--dp));
   /* radius: nested corners follow inner = outer - padding */
-  --pad:4px;
-  --r-outer:8px;
+  --pad:calc(4 * var(--dp));
+  --r-outer:calc(8 * var(--dp));
   --r-inner:calc(var(--r-outer) - var(--pad));
   /* motion: only for feedback on an action */
   --ease:cubic-bezier(.2,.7,.2,1);
   --t-fast:.18s;
   --t-panel:.4s;
-  --hit:44px;                              /* minimum click target */
+  --hit:calc(44 * var(--dp));                              /* minimum click target */
 }
 .num,[data-num]{font-variant-numeric:tabular-nums}

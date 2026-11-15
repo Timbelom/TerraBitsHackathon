@@ -25,7 +25,7 @@ export function createSearch({ input, list, sites, parse, choose }) {
       li.addEventListener('pointermove', () => { if (active !== i) mark(i); });
       return li;
     }));
-    if (!items.length) { const li = document.createElement('li'); li.className = 'search-none'; li.textContent = 'No listed site. For coordinates type lat, lon in degrees, e.g. -89.45, 222.8'; list.append(li); }
+    if (!items.length) { const li = document.createElement('li'); li.className = 'search-none'; li.textContent = 'No matching site. Enter coordinates as lat, lon in degrees, e.g. -89.45, 222.8'; list.append(li); }
     mark(c ? 0 : -1); open(true);
   }
   function take(i) {

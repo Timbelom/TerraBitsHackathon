@@ -1,31 +1,35 @@
 /* Search field in the landing-page header (landing-search.js). Values from tokens.css only.
    Fills the space between the wordmark and the navigation; suggestions are the one surface. */
-.search{position:relative;flex:1;min-width:0;margin:0 var(--s6);font-family:var(--font-ui)}
-.search>svg{position:absolute;left:var(--s3);top:50%;width:14px;height:14px;margin-top:-7px;color:var(--text-muted);pointer-events:none}
-.search input{width:100%;height:40px;padding:0 var(--s3) 0 calc(var(--s3) + 14px + var(--s2));background:var(--field);border:1px solid transparent;border-radius:var(--r-inner);color:var(--text);font:400 14px var(--font-ui);font-variant-numeric:tabular-nums;outline:0;transition:border-color var(--t-fast),background var(--t-fast)}
+.search{position:relative;flex:1;min-width:calc(150 * var(--dp));margin:0 var(--s6);font-family:var(--font-ui)}
+.search>svg{position:absolute;left:var(--s3);top:50%;width:calc(14 * var(--dp));height:calc(14 * var(--dp));margin-top:calc(-7 * var(--dp));color:var(--text-muted);pointer-events:none}
+.search input{width:100%;height:calc(40 * var(--dp));padding:0 var(--s3) 0 calc(var(--s3) + calc(14 * var(--dp)) + var(--s2));background:var(--field);border:1px solid transparent;border-radius:var(--r-inner);color:var(--text);font:400 calc(14 * var(--dp)) var(--font-ui);font-variant-numeric:tabular-nums;outline:0;transition:border-color var(--t-fast),background var(--t-fast)}
 .search input::placeholder{color:var(--text-muted);opacity:1}
 .search input:hover{background:var(--surface-hover)}
 .search input:focus-visible{border-color:var(--accent)}
-.search ul{position:absolute;left:0;right:0;top:calc(100% + var(--s1));margin:0;padding:var(--pad);list-style:none;background:var(--surface);-webkit-backdrop-filter:blur(18px);backdrop-filter:blur(18px);border:1px solid var(--line);border-radius:var(--r-outer);max-height:60vh;overflow-y:auto}
-.search li{display:flex;justify-content:space-between;align-items:baseline;gap:var(--s4);padding:var(--s2) var(--s3);border-radius:var(--r-inner);color:var(--text);font-size:14px;line-height:1.5;cursor:pointer}
-.search li small{font-size:12px;color:var(--text-muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.search ul{position:absolute;left:0;right:0;top:calc(100% + var(--s1));margin:0;padding:var(--pad);list-style:none;background:var(--surface);-webkit-backdrop-filter:blur(calc(18 * var(--dp)));backdrop-filter:blur(calc(18 * var(--dp)));border:1px solid var(--line);border-radius:var(--r-outer);max-height:60vh;overflow-y:auto;min-width:min(calc(440 * var(--dp)),calc(100vw - 2 * var(--s4)))}
+.search li{display:flex;justify-content:space-between;align-items:baseline;gap:var(--s4);padding:var(--s2) var(--s3);border-radius:var(--r-inner);color:var(--text);font-size:calc(14 * var(--dp));line-height:1.5;cursor:pointer}
+.search li small{font-size:calc(12 * var(--dp));color:var(--text-muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .search li[aria-selected="true"]{background:var(--surface-hover)}
 .search li.search-none{color:var(--text-muted);cursor:default}
 .entering .search{visibility:hidden}
 /* The header measures itself, so the row also adapts when the sidebar narrows it.
    Wide header: wordmark, search and navigation 40 % larger than the base in landing.css.
+   Widths here are in px of the 1920 x 950 drawing (--dp, tokens.css); the queries below carry them as expressions of the window.
+   Wide header (from 1190 between its paddings): the gaps between the links take what the row has left after the wordmark, the links and 150 for
+   the search field, up to 77; with the sidebar closed that is always 77.
    Narrow header (small window, or sidebar open in a small window): base sizes; below 640 px of content width no search,
    the Coordinates field of the sidebar takes the same input. */
 .site-header{container-type:inline-size}
 .site-header nav{flex:none;white-space:nowrap}
-@container (max-width:639px){.search{display:none}}
-@container (min-width:1100px){
-.wordmark{font-size:21px}.diamond{font-size:18px;margin-left:13px}
-.site-header nav{gap:clamp(31px,4.6cqw,77px)}.site-header nav a{font-size:21px}
+@container (max-width:clamp(415.4px,min(33.281vw,67.263vh),1278px)){.search{display:none}}
+@container (min-width:clamp(773.5px,min(61.979vw,125.263vh),2380px)){
+.wordmark{font-size:calc(21 * var(--dp))}.diamond{font-size:calc(18 * var(--dp));margin-left:calc(13 * var(--dp))}
+.site-header nav{gap:clamp(calc(12 * var(--dp)),calc((100cqw - calc(1110 * var(--dp))) / 6),calc(77 * var(--dp)))}.site-header nav a{font-size:calc(21 * var(--dp))}
 .search{margin:0 calc(var(--s6) * 1.4)}
-.search>svg{left:var(--s4);width:20px;height:20px;margin-top:-10px}
-.search input{height:56px;padding:0 var(--s4) 0 calc(var(--s4) + 20px + var(--s3));font-size:20px}
-.search li{padding:var(--s3) var(--s4);font-size:20px}.search li small{font-size:17px}
+.search>svg{left:var(--s4);width:calc(20 * var(--dp));height:calc(20 * var(--dp));margin-top:calc(-10 * var(--dp))}
+.search input{height:calc(56 * var(--dp));padding:0 var(--s4) 0 calc(var(--s4) + calc(20 * var(--dp)) + var(--s3));font-size:calc(20 * var(--dp))}
+.search li{padding:var(--s3) var(--s4);font-size:calc(20 * var(--dp))}.search li small{font-size:calc(17 * var(--dp))}
+.search ul{min-width:min(calc(580 * var(--dp)),calc(100vw - 2 * var(--s4)))}
 }
-@media(min-width:1280px){.site-header{height:119px}}
+@media(min-width:832px){.site-header{height:calc(119 * var(--dp))}}
 @media(prefers-reduced-motion:reduce){.search input{transition:none}}
