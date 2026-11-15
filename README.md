@@ -161,3 +161,22 @@ The Horizons table and the 5 m site profiles are rebuilt with the scripts in `ex
 The code, the data-preparation scripts and this text were written with AI assistance (Claude, Anthropic).
 NASA data are resampled, averaged and repacked as described above, not otherwise changed. The results were
 checked with the tests listed; assumptions marked as such are decisions of the team, not facts about the Moon.
+
+## License and credits
+
+The code of this repository is under the MIT License (`LICENSE`), Copyright (c) 2026 TerraBits team. The data
+and images that come with it are not ours and keep the terms of their sources:
+
+- **three.js** r169 in `vendor/three@0.169.0/` (build, OrbitControls, GLTFLoader, BufferGeometryUtils): MIT,
+  Copyright 2010-2024 three.js authors; its licence text is in that folder.
+- **Terrain** (`data/globe/`, `data/terrain/`, `data/exposure/`, the 5 m horizon profiles in
+  `expiry-date/data/`): derived from NASA LOLA products of the PGDA (products 95, 78 and 90, see "Data and
+  sources"); Barker et al., 2023.
+- **Sky** (`expiry-date/data/sky_2027_2066.bin`): NASA JPL Horizons.
+- **Moon imagery** (`assets/moon-color.jpg`): NASA SVS CGI Moon Kit, LROC WAC mosaic.
+- **Sun** (`assets/sun-sdo.mp4`): SDO/AIA 304 A full-disc movie of 10 May 2024, courtesy of NASA/SDO and the
+  AIA, EVE, and HMI science teams. `assets/sun.glb`: NASA "3D Model of the Sun" (science.nasa.gov).
+- **Stars** (`assets/stars-bsc5.json`): Yale Bright Star Catalogue, 5th revised edition, via
+  github.com/brettonw/YaleBrightStarCatalog (the licence of that repository was not checked).
+- **Earth texture** (`assets/earth-day.jpg`): source not recorded in the repository; to be confirmed.
+- **Fonts** (DM Sans, Jost, Inter): loaded from Google Fonts at run time, not part of the repository.
