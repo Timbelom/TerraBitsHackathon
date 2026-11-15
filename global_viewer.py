@@ -40,6 +40,16 @@ SHADOW_PAD_KM = 25.0            # +25 km on each side (250x250 km total shadow c
 # single 200x200 km map, i.e. the full LDEM64 resolution.
 TILE_GRID_RES = 640
 
+# ---- LOOK OF THE GLOBAL VIEW (shadow mode) ------------------------------------------------
+# The sunlit side of the globe used to be very bright (Sun intensity 3.3, albedo #c2c6cc).
+# Lower the intensity and/or darken the colour to tone the sunny side down further.
+GLOBAL_SUN_INTENSITY = 1.3          # was 3.3
+GLOBAL_TERRAIN_COLOR = "#a9adb4"    # was #c2c6cc
+
+# ---- LAYERED CONTOURS BELOW THE SURFACE (detail view) ------------------------------------
+# Gap (km) between the lowest terrain point of the tile and the top layer of the stack.
+CONTOUR_STACK_GAP_KM = 2.0
+
 # On-demand tile data: the page fetches "tiles/tile_NNNN.bin" when a square is opened.
 # The local server below cuts that square out of the full-resolution GeoTIFF on first
 # request and keeps the result in TILE_CACHE_DIR, so every square is computed only once.
@@ -958,6 +968,9 @@ combined_payload = {
     "far_half_km": FAR_FIELD_HALF_KM,
     "far_header_bytes": FAR_HEADER_BYTES,
     "has_exposure_maps": bool(load_exposure_maps),
+    "global_sun_intensity": GLOBAL_SUN_INTENSITY,
+    "global_terrain_color": GLOBAL_TERRAIN_COLOR,
+    "contour_stack_gap_km": CONTOUR_STACK_GAP_KM,
     "global": {
         "rows": int(g_z_grid.shape[0]),
         "cols": int(g_z_grid.shape[1]),
@@ -1319,6 +1332,11 @@ html_template = f"""<!DOCTYPE html>
       <div class="switch-pill on" id="contour-switch-pill"></div>
     </div>
 
+    <div class="sub-toggle-row" id="stack-toggle-row" style="display: none;" title="Stack of flat contour layers below the terrain (detail view only)">
+      <span class="sub-toggle-label">Layered Contours (below surface)</span>
+      <div class="switch-pill on" id="stack-switch-pill"></div>
+    </div>
+
     <div class="control-group" id="contour-fineness-group">
       <div class="control-header">
         <span>Contour Interval</span>
@@ -1417,6 +1435,9 @@ const TOTAL_STEPS = EPHEM.timestamps.length;
 const SOLAR_CONSTANT_WM2 = 1361;
 const SOLAR_ANGULAR_RADIUS_DEG = 0.2666;
 const SOLAR_ANGULAR_RADIUS_RAD = THREE.MathUtils.degToRad(SOLAR_ANGULAR_RADIUS_DEG);
+// Look of the sunlit side of the globe (tune GLOBAL_SUN_INTENSITY / GLOBAL_TERRAIN_COLOR in the Python header).
+const GLOBAL_SUN_INTENSITY = DATA.global_sun_intensity;
+const GLOBAL_TERRAIN_COLOR = DATA.global_terrain_color;
 
 if (!HAS_EXPOSURE_MAPS) {{
   const btnSunExp = document.getElementById('btn-mode-sunexp');
@@ -1844,8 +1865,9 @@ const GlobalView = (() => {{
     geometry.attributes.normal.needsUpdate = true;
   }}
 
+  // Softer, darker terrain colour than before so the sunlit side is not blown out.
   const shadowMaterial = new THREE.MeshStandardMaterial({{
-    color: 0xc2c6cc,
+    color: new THREE.Color(GLOBAL_TERRAIN_COLOR),
     roughness: 0.96,
     metalness: 0.0
   }});
@@ -2200,7 +2222,8 @@ const GlobalView = (() => {{
   }}
   rebuildSurfaceContours(currentContourInterval);
 
-  const sunLight = new THREE.DirectionalLight(0xfff8e7, 3.3);
+  // Sun intensity is toned down (GLOBAL_SUN_INTENSITY) so the lit hemisphere looks calmer.
+  const sunLight = new THREE.DirectionalLight(0xfff8e7, GLOBAL_SUN_INTENSITY);
   sunLight.castShadow = true;
   sunLight.shadow.mapSize.width = 4096;
   sunLight.shadow.mapSize.height = 4096;
@@ -2458,7 +2481,7 @@ const GlobalView = (() => {{
       terrainMesh.castShadow = true;
       terrainMesh.receiveShadow = true;
       sunLight.castShadow = true;
-      sunLight.intensity = 3.3;
+      sunLight.intensity = GLOBAL_SUN_INTENSITY;
       ambientLight.intensity = 0.04;
       mapReliefLight.intensity = 0.0;
 
@@ -2523,7 +2546,7 @@ const GlobalView = (() => {{
     subEarthDot.quaternion.setFromUnitVectors(_zAxis, _earthVec);
 
     if (mapMode === 'shadow' && group.visible) {{
-      sunLight.intensity = 3.3;
+      sunLight.intensity = GLOBAL_SUN_INTENSITY;
       renderer.shadowMap.needsUpdate = true;
     }}
 
@@ -2929,6 +2952,26 @@ const TileDetailView = (() => {{
   surfaceContoursMesh.visible = false;
   group.add(surfaceContoursMesh);
 
+  // ---- Layered contours BELOW the surface ---------------------------------------------------
+  // Every contour level is also drawn as a flat layer (constant height) in a stack that hangs
+  // below the lowest point of the terrain, like a laser-cut topographic model: the highest
+  // level on top, the lowest at the bottom, at true scale (incl. the vertical exaggeration).
+  // Colours follow the elevation colour scale; each layer also gets a dim square frame.
+  let showContourStack = true;
+  let stackBottomY = -12.0;
+  const contourStackMesh = new THREE.LineSegments(
+    new THREE.BufferGeometry(),
+    new THREE.LineBasicMaterial({{
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.92,
+      clippingPlanes: tileClipPlanes
+    }})
+  );
+  contourStackMesh.visible = false;
+  contourStackMesh.frustumCulled = false;
+  group.add(contourStackMesh);
+
   function rebuildSurfaceContours(intervalMeters) {{
     const minM = tileMinZ;
     const maxM = tileMaxZ;
@@ -2942,6 +2985,13 @@ const TileDetailView = (() => {{
     const segPositions = [];
     const segColors = [];
     const lift = 0.14;
+
+    // Layer stack geometry: same x/z as the surface contour, but at the height of the layer.
+    const stackPositions = [];
+    const stackColors = [];
+    const stackTopY = minWorldY - DATA.contour_stack_gap_km;
+    const stackYOf = (isoZ) => stackTopY - ((maxM - isoZ) / 1000.0) * DATA.exaggeration;
+    let curStackY = 0, curSr = 1, curSg = 1, curSb = 1;
 
     function traceTri(i0, h0, i1, h1, i2, h2, isoZ, cr, cg, cb) {{
       let count = 0;
@@ -2974,6 +3024,8 @@ const TileDetailView = (() => {{
       if (count === 2) {{
         segPositions.push(p0x, p0y, p0z, p1x, p1y, p1z);
         segColors.push(cr, cg, cb, cr, cg, cb);
+        stackPositions.push(p0x, curStackY, p0z, p1x, curStackY, p1z);
+        stackColors.push(curSr, curSg, curSb, curSr, curSg, curSb);
       }}
     }}
 
@@ -3010,10 +3062,37 @@ const TileDetailView = (() => {{
             cg = isMajor ? 0.03 : 0.08;
             cb = isMajor ? 0.05 : 0.12;
           }}
+
+          // layer of the stack: viridis colour by elevation, major levels lighter
+          curStackY = stackYOf(isoZ);
+          const vc = sampleStops(frac, VIRIDIS_STOPS);
+          const lighten = isMajor ? 0.35 : 0.0;
+          curSr = vc[0] + (1 - vc[0]) * lighten;
+          curSg = vc[1] + (1 - vc[1]) * lighten;
+          curSb = vc[2] + (1 - vc[2]) * lighten;
+
           traceTri(i00, h00, i01, h01, i10, h10, isoZ, cr, cg, cb);
           traceTri(i01, h01, i11, h11, i10, h10, isoZ, cr, cg, cb);
         }}
       }}
+    }}
+
+    // Dim square frame per layer + four vertical corner lines joining the layers.
+    const fh = VIS_HALF_KM - 0.02;   // just inside the clip planes
+    const frameSquare = [[-fh, -fh, fh, -fh], [fh, -fh, fh, fh], [fh, fh, -fh, fh], [-fh, fh, -fh, -fh]];
+    for (const isoZ of levels) {{
+      const y = stackYOf(isoZ);
+      const vc = sampleStops((isoZ - minM) / zRangeM, VIRIDIS_STOPS);
+      const fr = vc[0] * 0.5, fg = vc[1] * 0.5, fb = vc[2] * 0.5;
+      for (const [ax, az, bx, bz] of frameSquare) {{
+        stackPositions.push(ax, y, az, bx, y, bz);
+        stackColors.push(fr, fg, fb, fr, fg, fb);
+      }}
+    }}
+    stackBottomY = stackTopY - ((maxM - minM) / 1000.0) * DATA.exaggeration;
+    for (const [sx, sz] of [[-fh, -fh], [fh, -fh], [fh, fh], [-fh, fh]]) {{
+      stackPositions.push(sx, stackTopY, sz, sx, stackBottomY, sz);
+      stackColors.push(0.55, 0.65, 0.80, 0.55, 0.65, 0.80);
     }}
 
     const newGeo = new THREE.BufferGeometry();
@@ -3021,6 +3100,16 @@ const TileDetailView = (() => {{
     newGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(segColors), 3));
     surfaceContoursMesh.geometry.dispose();
     surfaceContoursMesh.geometry = newGeo;
+
+    const stackGeo = new THREE.BufferGeometry();
+    stackGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(stackPositions), 3));
+    stackGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(stackColors), 3));
+    contourStackMesh.geometry.dispose();
+    contourStackMesh.geometry = stackGeo;
+
+    // keep the floor grid and axis labels below the stack
+    scaleGroup.position.y = Math.min(0, (stackBottomY - 4.0) - baseY);
+
     return levels.length;
   }}
 
@@ -3675,6 +3764,7 @@ const TileDetailView = (() => {{
       activeDayTrail.visible = true;
       earthTrail.visible = true;
       surfaceContoursMesh.visible = false;
+      contourStackMesh.visible = false;
     }} else {{
       if (mode === 'height') colorAttr.array.set(heightColors);
       else if (mode === 'sunexp' && sunExpColors) colorAttr.array.set(sunExpColors);
@@ -3697,6 +3787,7 @@ const TileDetailView = (() => {{
       activeDayTrail.visible = false;
       earthTrail.visible = (mode === 'radio');
       surfaceContoursMesh.visible = (mode === 'height') && showSurfaceContours;
+      contourStackMesh.visible = (mode === 'height') && showContourStack;
     }}
   }}
 
@@ -3846,6 +3937,8 @@ const TileDetailView = (() => {{
     setMapMode,
     getShowContours: () => showSurfaceContours,
     setShowContours: (v) => {{ showSurfaceContours = v; surfaceContoursMesh.visible = (mapMode === 'height') && v; }},
+    getShowContourStack: () => showContourStack,
+    setShowContourStack: (v) => {{ showContourStack = v; contourStackMesh.visible = (mapMode === 'height') && v; }},
     getContourInterval: () => currentContourInterval,
     setContourInterval: (iv) => {{ currentContourInterval = iv; return rebuildSurfaceContours(iv); }},
     hourlySunLit,
@@ -3946,6 +4039,8 @@ const graticuleToggleRow = document.getElementById('graticule-toggle-row');
 const sunControlsEl = document.getElementById('sun-controls');
 const heightControlsEl = document.getElementById('height-controls');
 const contourSwitchPill = document.getElementById('contour-switch-pill');
+const stackToggleRow = document.getElementById('stack-toggle-row');
+const stackSwitchPill = document.getElementById('stack-switch-pill');
 const finenessGroup = document.getElementById('contour-fineness-group');
 const finenessSlider = document.getElementById('fineness-slider');
 const contourValEl = document.getElementById('contour-interval-val');
@@ -4041,6 +4136,7 @@ function syncHUDForScope() {{
     enterTileBtn.style.display = 'flex';
     tileGridToggleRow.style.display = 'flex';
     graticuleToggleRow.style.display = 'flex';
+    stackToggleRow.style.display = 'none';
     hudTitleEl.textContent = 'Global Lunar Globe (Fast)';
     hudSubtitleEl.textContent = `1:1 Metric Lunar Sphere • ${{LUNAR_TILES.length.toLocaleString()}} × (200×200 km, {TILE_GRID_RES}px Max-Detail)`;
 
@@ -4076,6 +4172,7 @@ function syncHUDForScope() {{
     enterTileBtn.style.display = 'none';
     tileGridToggleRow.style.display = 'none';
     graticuleToggleRow.style.display = 'none';
+    stackToggleRow.style.display = 'flex';
 
     const tile = TileDetailView.getTile();
     const latDir = tile.lat >= 0 ? 'N' : 'S';
@@ -4085,8 +4182,9 @@ function syncHUDForScope() {{
 
     const showC = TileDetailView.getShowContours();
     contourSwitchPill.classList.toggle('on', showC);
-    finenessGroup.style.opacity = showC ? '1' : '0.45';
-    finenessSlider.disabled = !showC;
+    stackSwitchPill.classList.toggle('on', TileDetailView.getShowContourStack());
+    finenessGroup.style.opacity = '1';
+    finenessSlider.disabled = !(showC || TileDetailView.getShowContourStack());
     finenessSlider.min = '50';
     finenessSlider.max = '1000';
     finenessSlider.step = '50';
@@ -4453,6 +4551,12 @@ document.getElementById('contour-toggle-row').addEventListener('click', () => {{
   syncHUDForScope();
 }});
 
+stackToggleRow.addEventListener('click', () => {{
+  if (viewScope !== 'tile') return;
+  TileDetailView.setShowContourStack(!TileDetailView.getShowContourStack());
+  syncHUDForScope();
+}});
+
 finenessSlider.addEventListener('input', (e) => {{
   const rawVal = parseInt(e.target.value, 10);
   if (viewScope === 'global') {{
@@ -4462,7 +4566,7 @@ finenessSlider.addEventListener('input', (e) => {{
   }} else {{
     const iv = 1050 - rawVal;
     const lines = TileDetailView.setContourInterval(iv);
-    contourValEl.textContent = `${{iv}} m (${{lines}} lines)`;
+    contourValEl.textContent = `${{iv}} m (${{lines}} layers)`;
   }}
 }});
 
