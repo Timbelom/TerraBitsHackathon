@@ -10,6 +10,8 @@
   --surface-hover:rgb(255 255 255 / .09);
   --text:#f4f5f8;
   --text-muted:#b3b7bd;  /* secondary text; never go dimmer for text */
+  --good:#6fd6a0;  /* a value in the mission's favour (Sun or Earth in view, gap within its limit) */
+  --bad:#ff8a7f;  /* a value against it, warnings */
   --accent:#eceef1;  /* no accent colour for now: active state, focus and fills are near-white */
   --accent-ink:#111214;  /* marks on top of the active fill */
   /* type: Inter for all tool UI (labels, values, units), Jost only for the landing headline, no monospace */

@@ -40,3 +40,8 @@
 @keyframes series-in{from{opacity:0}}
 @media(max-width:560px){.series-legend{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){.series{animation:none}.series-close{transition:none}}
+/* No marked point: a line of text instead of the plot. */
+.series-empty{display:none;margin:var(--s3) 0 0;color:var(--text-muted)}
+.series.empty .series-empty{display:block}.series.empty .series-plot,.series.empty .series-legend{display:none}
+/* Header switch for the panel */
+.site-header nav a[aria-pressed="true"]{text-decoration:underline;text-underline-offset:6px;text-decoration-thickness:1px}

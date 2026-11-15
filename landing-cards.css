@@ -23,11 +23,11 @@
 .card-sub{margin:0;font-variant-numeric:tabular-nums}
 .card dl{display:grid;grid-template-columns:auto 1fr;column-gap:var(--s4);margin:var(--s3) 0 0;line-height:1.6}
 /* Third group: the time span of the sidebar. Its heading is the span itself; a value over its limit is a warning. */
-.card-span{margin:var(--s3) 0 0;font-weight:600;font-variant-numeric:tabular-nums}
+.card-span{margin:var(--s3) 0 0;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
 .card dl.card-limits{margin-top:0}
-.card dd.over{color:#ff8a7f}
-/* What the numbers rest on: sky source and ground */
-.card-basis{margin:var(--s3) 0 0;font-size:13px;line-height:1.5;color:var(--text-muted)}
+/* Values a mission gains or suffers from: Sun or Earth in view or not, a gap within or over its limit. The words say it too. */
+.card dd.good{color:var(--good)}.card dd.bad{color:var(--bad)}
+.card dl [hidden]{display:none}
 .card dd{margin:0;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
 .card-terrain{display:block;width:100%;height:var(--hit);margin-top:var(--s4);padding:0;background:var(--accent);border:1px solid transparent;border-radius:var(--r-inner);color:var(--accent-ink);font:600 16px var(--font-ui);cursor:pointer;transition:opacity var(--t-fast)}
 .card-terrain:hover{opacity:.86}

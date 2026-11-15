@@ -11,11 +11,12 @@
 // compare sites. "View terrain" opens the terrain view around the point.
 // Placement: a card opens on the side of the Moon its site is on, outside the disc, at the height of
 // the site; it moves up or down, then to the other side, then further out, until it overlaps no other
-// card and its line does not run under another card. Cards can be dragged (or moved with the arrow keys); a moved card stays where it was put.
+// card and its line does not run under another card. When the cards do not all fit beside the Moon, the page
+// zooms out (fit() says how far) and the cards are placed again (relayout()). Cards can be dragged (or moved with the arrow keys); a moved card stays where it was put.
 // While a site is behind the limb its marker, line and card are hidden; the card comes back with the site
 // (a card that was not moved by hand then looks for its place again).
-import { siteSky, DAY_MS, SOURCE_LABEL } from './core/sky.js';
-import { siteState, nextChange, spanMetrics, IN_VIEW, basisLabel, HOUR_MS } from './core/visibility.js';
+import { siteSky, DAY_MS } from './core/sky.js';
+import { siteState, nextChange, spanMetrics, IN_VIEW, HOUR_MS } from './core/visibility.js';
 import { coordText } from './landing-pins.js';
 
 // Rise and set (the disc passing 50 %) are searched hourly for 60 days, then in 6 h steps up to 19 years (one
@@ -24,11 +25,11 @@ const HOUR = HOUR_MS, SEARCH_MS = 19 * 365.25 * DAY_MS, REFRESH_MS = 200;
 const MAX_SAMPLES = 9000;                                        // span metrics: hourly up to a year, coarser steps beyond
 const GAP = 48, BETWEEN = 12, EDGE = 16, TOP = 93, LEFT = 72;   // px; TOP clears the header, LEFT the Parameters tab
 const CLOSE_SVG = '<svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3 3l8 8M11 3l-8 8"/></svg>';
-const body = (word, id) => '<dl><dt>Sub-' + (id === 'sun' ? 'solar' : 'Earth') + ' point</dt><dd data-f="' + id + 'Sub"></dd><dt>' + (id === 'sun' ? 'Solar' : 'Earth') + ' elevation</dt><dd data-f="' + id + 'El"></dd>'
-  + '<dt>Horizon below the ' + word + '</dt><dd data-f="' + id + 'Hor"></dd><dt>' + word + '\u2019s disc in view</dt><dd data-f="' + id + 'Frac"></dd><dt data-f="' + id + 'Lab"></dt><dd data-f="' + id + 'In"></dd></dl>';
+const body = (word, id) => '<dl><dt>Sub-' + (id === 'sun' ? 'solar' : 'Earth') + ' point</dt><dd data-f="' + id + 'Sub"></dd><dt>' + (id === 'sun' ? 'Solar' : 'Earth') + ' elevation above horizon</dt><dd data-f="' + id + 'El"></dd>'
+  + '<dt>' + word + '\u2019s disc in view</dt><dd data-f="' + id + 'Frac"></dd><dt data-f="' + id + 'Lab"></dt><dd data-f="' + id + 'In"></dd></dl>';
 const ROWS = body('Sun', 'sun') + body('Earth', 'earth')
   + '<p class="card-span" data-f="span"></p><dl class="card-limits"><dt>Sun in view</dt><dd data-f="sunShare"></dd><dt>Longest darkness</dt><dd data-f="sunGap"></dd>'
-  + '<dt>Earth in view</dt><dd data-f="earthShare"></dd><dt>Longest DTE outage</dt><dd data-f="earthGap"></dd></dl><p class="card-basis" data-f="basis"></p>';
+  + '<dt>Earth in view</dt><dd data-f="earthShare"></dd><dt>Longest DTE outage</dt><dd data-f="earthGap"></dd></dl>';
 const clamp = (v, a, b) => Math.max(a, Math.min(v, Math.max(a, b)));
 const point = p => Math.abs(p[0]).toFixed(1) + '° ' + (p[0] < 0 ? 'S' : 'N') + ', ' + p[1].toFixed(1) + '° E';
 const angle = d => (d < 0 ? '−' : '+') + Math.abs(d).toFixed(1) + '°';
@@ -46,6 +47,7 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
   hero.append(lines, root);
   const cards = new Map();                       // site id -> card
   let lastFill = 0;
+  let docked = null, dockTop = TOP;                // see dock() below
   pins.onOpen = s => cards.has(s.id) ? close(s.id) : open(s);
   pins.onClose = id => close(id);
 
@@ -55,37 +57,62 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
     c.x = clamp(x, Math.min(B.l, EDGE), B.r - c.w); c.y = clamp(y, B.t, B.b - c.h);
     c.el.style.transform = 'translate(' + Math.round(c.x) + 'px,' + Math.round(c.y) + 'px)';
   }
-  /** Area this rectangle shares with the other cards (each grown by the gap between cards). */
-  function taken(c, x, y) {
+  /** Rectangles of the other cards that are shown (those in `skip` left out). */
+  function others(c, skip) { const out = []; for (const o of cards.values()) if (o !== c && !o.el.hidden && !skip?.has(o)) out.push(o); return out; }
+  /** Area this rectangle shares with the given rectangles and the panel to avoid (each grown by the gap between cards). */
+  function taken(c, x, y, rects) {
     let a = 0;
     const v = avoid?.();
-    if (v) a += Math.max(0, Math.min(x + c.w, v.x + v.w + BETWEEN) - Math.max(x, v.x - BETWEEN)) * Math.max(0, Math.min(y + c.h, v.y + v.h + BETWEEN) - Math.max(y, v.y - BETWEEN));
-    for (const o of cards.values()) if (o !== c && !o.el.hidden)
+    for (const o of v ? [v, ...rects] : rects)
       a += Math.max(0, Math.min(x + c.w, o.x + o.w + BETWEEN) - Math.max(x, o.x - BETWEEN)) * Math.max(0, Math.min(y + c.h, o.y + o.h + BETWEEN) - Math.max(y, o.y - BETWEEN));
     return a;
   }
-  /** Does the line from the site to a card at x, y run under another card? */
-  function crossed(c, sx, sy, x, y) {
+  /** Does the line from the site to a card at x, y run under one of the rectangles? */
+  function crossed(c, sx, sy, x, y, rects) {
     const ex = clamp(sx, x, x + c.w), ey = clamp(sy, y, y + c.h);
-    for (const o of cards.values()) if (o !== c && !o.el.hidden) for (let i = 1; i < 16; i++) {
+    for (const o of rects) for (let i = 1; i < 16; i++) {
       const px = sx + (ex - sx) * i / 16, py = sy + (ey - sy) * i / 16;
       if (px > o.x && px < o.x + o.w && py > o.y && py < o.y + o.h) return true;
     }
     return false;
   }
-  function place(c) {
-    const d = disc(), B = bounds(), s = c.site, sx = s.vis ? s.x : d.x, sy = s.vis ? s.y : d.y;
+  /** Best place for a card beside a Moon disc d, among the rectangles. k scales the site's offset from the disc
+   *  centre (1 = as on screen; smaller = the Moon as it would be after zooming out). Returns { x, y, over }:
+   *  over = area shared with other cards, 0 when the card stands free. */
+  function search(c, d, k, rects) {
+    const cur = disc(), B = bounds(), s = c.site;
+    const sx = s.vis ? d.x + (s.x - cur.x) * k : d.x, sy = s.vis ? d.y + (s.y - cur.y) * k : d.y;
     const pref = sx < d.x ? -1 : 1, y0 = d.y + (sy - d.y) * 1.3 - c.h / 2;      // a little further out than the site
     let best = null;
-    const tryAt = (x, y, cost) => { cost += taken(c, x, y) + Math.abs(y - y0) + (crossed(c, sx, sy, x, y) ? 300 : 0); if (!best || cost < best.cost) best = { x, y, cost }; };
-    for (const side of [pref, -pref]) for (let col = 0; col < 2; col++) {
+    const tryAt = (x, y, cost) => { const over = taken(c, x, y, rects); cost += over + Math.abs(y - y0) + (crossed(c, sx, sy, x, y, rects) ? 300 : 0); if (!best || cost < best.cost) best = { x, y, cost, over }; };
+    for (const side of [pref, -pref]) for (let col = 0; col < 4; col++) {
       const x = side < 0 ? d.x - d.r - GAP - c.w - col * (c.w + BETWEEN) : d.x + d.r + GAP + col * (c.w + BETWEEN);
       if (x < B.l || x + c.w > B.r) continue;
       for (let n = 0; n < 60; n++) tryAt(x, clamp(y0 + (n % 2 ? 1 : -1) * Math.ceil(n / 2) * 24, B.t, B.b - c.h), (side !== pref ? 400 : 0) + col * 600);
     }
     // No room beside the Moon (narrow window): along the edge on the site's side, wherever least is covered.
     if (!best) for (let n = 0; n < 60; n++) tryAt(pref < 0 ? B.l : B.r - c.w, clamp(B.b - c.h - n * 24, B.t, B.b - c.h), 0);
-    moveTo(c, best.x, best.y);
+    return best;
+  }
+  function place(c) { const b = search(c, disc(), 1, others(c)); moveTo(c, b.x, b.y); }
+  /** All cards that were not moved by hand, placed afresh one after the other beside a disc d (k as in search).
+   *  Cards moved by hand stay and are kept clear of. Returns the places and the total shared area. */
+  function plan(d, k) {
+    const auto = new Set([...cards.values()].filter(c => !c.el.hidden && !c.manual));
+    const rects = [...cards.values()].filter(c => !c.el.hidden && c.manual), out = [];
+    let over = 0;
+    for (const c of auto) { const b = search(c, d, k, rects); rects.push({ x: b.x, y: b.y, w: c.w, h: c.h }); out.push([c, b]); over += b.over; }
+    return { out, over };
+  }
+  /** Place the cards again for the Moon as it is on screen now (after a zoom). */
+  function relayout() { if (docked || !cards.size) return; for (const [c, b] of plan(disc(), 1).out) moveTo(c, b.x, b.y); }
+  /** The largest Moon radius on screen (px, not above the present one, not below rMin) at which the cards stand
+   *  free of each other; null when they already do. */
+  function fit(rMin) {
+    const d = disc();
+    if (docked || cards.size < 2 || !plan(d, 1).over) return null;
+    for (let r = d.r * .94; r > rMin; r *= .94) if (!plan({ x: d.x, y: d.y, r }, r / d.r).over) return r;
+    return rMin;
   }
 
   function open(s) {
@@ -105,7 +132,7 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
       if (e.key === 'Enter') nameEl.blur(); else if (e.key === 'Escape') { nameEl.value = s.name; nameEl.blur(); }
     });
     const line = document.createElementNS(NS, 'line'); lines.append(line);
-    const c = { site: s, el, line, f: {}, shown: {}, next: {}, over: {}, gv: -1, mKey: '', m: null, x: 0, y: 0, w: 0, h: 0 };
+    const c = { site: s, el, line, f: {}, shown: {}, tones: {}, rows: {}, next: {}, over: {}, gv: -1, mKey: '', m: null, x: 0, y: 0, w: 0, h: 0 };
     el.querySelectorAll('[data-f]').forEach(n => { c.f[n.dataset.f] = n; });
     root.append(el); fill(c, now());
     c.w = el.offsetWidth; c.h = el.offsetHeight;
@@ -132,6 +159,10 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
   }
 
   function set(c, k, text) { if (c.shown[k] !== text) { c.shown[k] = text; c.f[k].textContent = text; } }
+  /** Colour of a value: 'good', 'bad' or '' (no judgement). Only values a mission gains or suffers from carry one. */
+  function tone(c, k, t) { if (c.tones[k] !== t) { c.tones[k] = t; c.f[k].classList.toggle('good', t === 'good'); c.f[k].classList.toggle('bad', t === 'bad'); } }
+  /** Show or hide a row (the value and its label). */
+  function row(c, k, on) { if (c.rows[k] !== on) { c.rows[k] = on; c.f[k].hidden = !on; c.f[k].previousElementSibling.hidden = !on; } }
   const st = { sun: {}, earth: {} };
   function fill(c, ms) {
     const { lat, lon } = c.site, g = ground(c.site), site = g.site, k = siteState(ms, site, st), sub = siteSky(ms, lat, lon);
@@ -140,13 +171,17 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
     set(c, 'sunSub', point(sub.subSolar)); set(c, 'earthSub', point(sub.subEarth));
     for (const [id, word] of [['sun', 'Sun'], ['earth', 'Earth']]) {
       const b = k[id], up = b.frac >= IN_VIEW;
-      set(c, id + 'El', angle(b.el)); set(c, id + 'Hor', angle(b.horizon)); set(c, id + 'Frac', Math.round(b.frac * 100) + ' %');
+      const above = b.el - b.horizon;                                  // disc centre above the skyline in that direction, as in the plot
+      set(c, id + 'El', angle(above)); tone(c, id + 'El', above > 0 ? 'good' : 'bad');
+      set(c, id + 'Frac', Math.round(b.frac * 100) + ' %'); tone(c, id + 'Frac', up ? 'good' : 'bad');
       let ev = c.next[id];
       // "never" found from ev.from on: after a jump back only the stretch up to ev.from has to be searched
       if (ev && !ev.at && ms < ev.from && !nextChange(ms, site, id, ev.from)) ev.from = ms;
       if (!ev || ms < ev.from || ms >= ev.redo) { const at = nextChange(ms, site, id, ms + SEARCH_MS); ev = c.next[id] = { from: ms, at, redo: at ?? ms + SEARCH_MS / 2 }; }
+      // No rise or set ahead: one row says it, the share of the disc is left out
+      row(c, id + 'Frac', !!ev.at);
       set(c, id + 'Lab', ev.at ? word + (up ? 'set in' : 'rise in') : word);
-      set(c, id + 'In', ev.at ? span(ev.at - ms) : up ? 'never sets' : 'never rises');
+      set(c, id + 'In', ev.at ? span(ev.at - ms) : up ? 'always in view' : 'never in view'); tone(c, id + 'In', ev.at ? '' : up ? 'good' : 'bad');
     }
     // the time span: metrics once per span and ground, limits compared on every refresh
     const w = spanWindow(), mKey = w.a + '|' + w.b;
@@ -156,20 +191,18 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
       c.m = spanMetrics(site, w.a, w.b, step); c.m.stepH = step / HOUR;
     }
     const m = c.m, lim = limits();
-    set(c, 'span', (w.free ? 'Next two lunar days, ' : '') + day(m.startMs) + ' to ' + day(m.endMs) + ' UTC');
+    set(c, 'span', w.free ? 'Next two lunar days' : day(m.startMs) + ' to ' + day(m.endMs) + ' UTC');
     for (const [id, limit] of [['sun', lim.dark], ['earth', lim.dte]]) {
       const v = m[id], gap = Math.round(v.longestGapHours), over = gap > limit;
       set(c, id + 'Share', (v.share * 100).toFixed(1) + ' % of ' + Math.round(v.hours) + ' h');
       set(c, id + 'Gap', (v.longestGapOpen ? '≥ ' : '') + gap + ' h · limit ' + limit + ' h');
-      if (c.over[id] !== over) { c.over[id] = over; c.f[id + 'Gap'].classList.toggle('over', over); c.f[id + 'Gap'].title = over ? 'Longer than the limit set in the sidebar' : ''; }
+      tone(c, id + 'Gap', over ? 'bad' : 'good');
+      if (c.over[id] !== over) { c.over[id] = over; c.f[id + 'Gap'].title = over ? 'Longer than the limit set in the sidebar' : ''; }
     }
-    set(c, 'basis', 'Sky: ' + (m.source === 'mixed' ? 'JPL Horizons and analytic model' : SOURCE_LABEL[m.source]) + '. Ground: ' + basisLabel(g.basis, g.horizon && g.horizon.pixelM)
-      + (g.loading ? ', loading terrain …' : g.error ? ' (terrain not loaded: ' + g.error + ')' : '') + '.' + (m.stepH > 1 ? ' Sampled every ' + m.stepH + ' h.' : ''));
   }
 
   // Docked: in the terrain view there is no Moon to stand beside. Only the card of that site is shown, top left,
   // without a line; the others wait until the view is left.
-  let docked = null, dockTop = TOP;
   function dock(id, top = TOP) {
     docked = id; dockTop = top;
     for (const c of cards.values()) { c.el.hidden = true; c.line.style.display = 'none'; c.docked = false; }   // every card finds its place again
@@ -201,5 +234,5 @@ export function createCards({ hero, pins, now, disc, avoid, ground, groundVersio
       if (on) { c.line.setAttribute('x1', s.x.toFixed(1)); c.line.setAttribute('y1', s.y.toFixed(1)); c.line.setAttribute('x2', x.toFixed(1)); c.line.setAttribute('y2', y.toFixed(1)); }
     }
   }
-  return { update, open, close, dock, has: id => cards.has(id) };
+  return { update, open, close, dock, relayout, fit, count: () => cards.size, has: id => cards.has(id) };
 }

@@ -14,8 +14,10 @@
 import * as THREE from 'three';
 import { MOON_RADIUS_KM, RAD, squares as makeSquares, squareAt, unitFromLatLon, localKmToUnit, bodyToThree } from '../core/frames.js';
 import { VIRIDIS, colorAt } from './colors.js';
+import { reliefShade, shadeMaterial } from './relief.js';
 
 const R_M = MOON_RADIUS_KM * 1000;
+const COMPRESS = 1;                          // brightness of the lit Moon: L / (1 + COMPRESS * L)
 
 /**
  * grid: GlobeGrid; radius: scene radius of the reference sphere; albedo: THREE.Texture or null;
@@ -60,6 +62,11 @@ export function createMoonGlobe({ grid, radius, albedo = null, detail = 1 }) {
   geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   geometry.setAttribute('color', new THREE.BufferAttribute(color, 3));
   geometry.setIndex(new THREE.BufferAttribute(idx, 1));
+  // relief shading (view/relief.js): one factor per node from the heights; the grid's cells get narrower towards the poles
+  { const cellM = cell * RAD * R_M, s = reliefShade({ cols, rows, height: i => z[i], cellX: r => cellM * Math.max(.05, Math.cos((lat0 - r * cell) * RAD)), cellY: cellM,
+      wrap: true, slopeRefDeg: 8, reach: 1, curvRefM: 350 }), shade = new Float32Array(n).fill(1);
+    for (let r = 0; r < rows; r++) for (let c = 0; c < mc; c++) shade[r * mc + c] = s[r * cols + c % cols];
+    geometry.setAttribute('shade', new THREE.BufferAttribute(shade, 1)); }
   geometry.computeVertexNormals();
   { const nm = geometry.attributes.normal.array;                        // one normal for the two copies of the seam column
     for (let r = 0; r < rows; r++) { const a = r * mc * 3, b = (r * mc + cols) * 3;
@@ -68,9 +75,14 @@ export function createMoonGlobe({ grid, radius, albedo = null, detail = 1 }) {
   geometry.computeBoundingSphere();
 
   const offset = { polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 };      // lines lie just above the ground
+  // Shadows: where the skyline map (setHorizon) is there, the Sun's light is scaled per fragment by the Sun's
+  // elevation against the terrain skyline; the shadow map of the page's light is then not used for the Moon.
+  const horizon = { uHorizon: { value: null }, uHorizonOn: { value: 0 }, uSunObj: { value: new THREE.Vector3(1, 0, 0) }, uHorizonMin: { value: -6 }, uHorizonSpan: { value: 36 } };
   const materials = {
-    relief: new THREE.MeshStandardMaterial({ color: 0xc2c6cc, roughness: .96, metalness: 0, ...offset }),
-    imagery: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, metalness: 0, map: albedo, ...offset }),
+    // The lit surfaces carry the relief shading, and their brightness is bent so the ground under a high Sun does
+    // not burn out to white and its craters stay readable (COMPRESS, see view/relief.js).
+    relief: shadeMaterial(new THREE.MeshStandardMaterial({ color: 0xc2c6cc, roughness: .96, metalness: 0, ...offset }), { compress: COMPRESS, horizon }),
+    imagery: shadeMaterial(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, metalness: 0, map: albedo, ...offset }), { compress: COMPRESS, horizon }),
     data: new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false, ...offset }),
   };
   const mesh = new THREE.Mesh(geometry, materials.relief);
@@ -113,11 +125,21 @@ export function createMoonGlobe({ grid, radius, albedo = null, detail = 1 }) {
     const lit = m === 'relief' || m === 'imagery';
     if (!lit) paint(m);
     mesh.material = lit ? materials[m] : materials.data;
-    mesh.castShadow = mesh.receiveShadow = lit;
+    mesh.castShadow = mesh.receiveShadow = lit && !horizon.uHorizonOn.value;
     contours.visible = contoursOn && m === 'elevation';
     if (contours.visible) buildContours();
     return m;
   }
+  /** The skyline map: bytes (azimuth layers of height x width, row 0 south) and its description file. */
+  function setHorizon(bytes, meta) {
+    const t = new THREE.Data3DTexture(bytes, meta.width, meta.height, meta.azimuths);
+    t.format = THREE.RedFormat; t.type = THREE.UnsignedByteType; t.minFilter = t.magFilter = THREE.LinearFilter;
+    t.wrapS = t.wrapR = THREE.RepeatWrapping; t.wrapT = THREE.ClampToEdgeWrapping; t.unpackAlignment = 1; t.needsUpdate = true;
+    horizon.uHorizon.value = t; horizon.uHorizonMin.value = meta.min_deg; horizon.uHorizonSpan.value = meta.span_deg; horizon.uHorizonOn.value = 1;
+    mesh.castShadow = mesh.receiveShadow = false;
+  }
+  /** Unit vector to the Sun in the Moon's own axes of the mesh (x = lon 0, y = north, z = lon 90 W). */
+  function setSun(v) { horizon.uSunObj.value.copy(v); }
   function setAlbedo(tex) { materials.imagery.map = tex; materials.imagery.needsUpdate = true; }
 
   // ---- lines on the ground ----------------------------------------------------------------------
@@ -225,7 +247,7 @@ export function createMoonGlobe({ grid, radius, albedo = null, detail = 1 }) {
   }
   return {
     group, mesh, detail, triangles: idx.length / 3, range: { minM, maxM },
-    setMode, get mode() { return mode; }, setAlbedo, setValues, valueAt, hasLayer: name => layers.has(name),
+    setMode, get mode() { return mode; }, setAlbedo, setHorizon, setSun, get hasHorizon() { return horizon.uHorizonOn.value > 0; }, setValues, valueAt, hasLayer: name => layers.has(name),
     setGraticule: on => { graticule.visible = on; }, setSquares, markSquare, setContours,
     squareAt: (latDeg, lonDeg) => squareAt(squareList, unitFromLatLon(latDeg, lonDeg)), squares: squareList,
     raycast, dispose,

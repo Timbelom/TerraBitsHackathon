@@ -4,7 +4,8 @@
 // (2 x synodic month, 2 x 29.53 d) from the simulated time, so the repetition is visible; the Sun's daily
 // course repeats after one lunar day, apart from the slow seasonal drift (about 1.5 deg over 347 d). A dashed
 // line marks the end of the first lunar day. The window moves on by one lunar day when the clock passes that line.
-// The panel opens top right and can be dragged (or moved with the arrow keys); a moved panel stays where it was put.
+// The panel is shown and hidden by "Solar Elevation" in the header (show(); off at the start). With no marked point it
+// says so instead of a plot. It opens top right and can be dragged (or moved with the arrow keys); a moved panel stays where it was put.
 // Its four corners resize it: wider, narrower, taller, lower (the plot takes the height). The plot is redrawn to fit.
 // Values come from core/visibility.js: elevation of the centre of the Sun's disc above the horizon of the point in
 // that direction (the terrain skyline where ui/site-data.js has one, the horizontal otherwise). Zero is the skyline.
@@ -67,13 +68,13 @@ export function createSeries({ hero, marked, now, window: timeWindow, setTime, o
   const el = document.createElement('section'); el.className = 'series'; el.hidden = true; el.tabIndex = 0;
   el.setAttribute('aria-label', 'Solar elevation above the horizon over time for the marked points');
   el.innerHTML = '<header><h2>Solar elevation above the horizon</h2><output class="series-time"></output><button type="button" class="series-close" aria-label="Close">' + CLOSE_SVG + '</button></header>'
-    + '<svg class="series-plot" role="img"></svg><ul class="series-legend"></ul>';
+    + '<p class="series-empty">Mark a point on the Moon to plot its solar elevation.</p><svg class="series-plot" role="img"></svg><ul class="series-legend"></ul>';
   hero.append(el);
   const timeEl = el.querySelector('.series-time'), plot = el.querySelector('.series-plot'), legend = el.querySelector('ul');
   el.querySelector('.series-close').addEventListener('click', () => onClose?.());
 
   const slots = new Map();                       // site id -> colour slot, kept while the site is marked
-  let on = true, key = '', win = null, shown = [], hoverMs = null, lastRead = 0, readKey = '';
+  let on = false, key = '', win = null, shown = [], hoverMs = null, lastRead = 0, readKey = '';
   let nowLine = null, hoverLine = null, W = 0, H = 0;
   // Position in hero px. Until the panel is moved by hand it sits top right and follows the hero's width.
   const at = { x: 0, y: 0, manual: false };
@@ -213,8 +214,10 @@ export function createSeries({ hero, marked, now, window: timeWindow, setTime, o
     for (const id of [...slots.keys()]) if (!all.some(s => s.id === id)) slots.delete(id);
     for (const s of all) if (!slots.has(s.id) && slots.size < COLORS.length) slots.set(s.id, COLORS.findIndex((_, i) => ![...slots.values()].includes(i)));
     const sites = all.filter(s => slots.has(s.id));
-    if (el.hidden !== !sites.length) { el.hidden = !sites.length; key = ''; }
-    if (!sites.length) { win = null; return; }
+    if (el.hidden !== !on) { el.hidden = !on; key = ''; }
+    el.classList.toggle('empty', !sites.length);
+    if (!on) { win = null; return; }
+    if (!sites.length) { win = null; key = ''; timeEl.textContent = ''; if (at.manual) moveTo(at.x, at.y); else moveTo(Infinity, TOP); return; }
     const t = now(), w = timeWindow();
     const k = w.a + '|' + w.b + '|' + groundVersion() + '|' + plot.clientWidth + 'x' + plot.clientHeight + '|' + sites.map(s => s.id + ':' + slots.get(s.id) + ':' + s.lat + ':' + s.lon + ':' + s.name).join();
     if (k !== key) {

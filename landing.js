@@ -13,7 +13,7 @@ import { inertialSky, loadHorizons, onSkyChange, skySource, SOURCE_LABEL, SIDERE
 import { TerrainSource, GlobeGrid } from './core/terrain.js';
 import { createSiteData } from './ui/site-data.js';
 import { createMoonGlobe } from './view/moon-globe.js';
-import { createTerrainView } from './view/terrain-view.js';
+import { createTerrainView } from './view/terrain-view.js?v=2';
 import { VIRIDIS, INFERNO, CIVIDIS, cssGradient } from './view/colors.js';
 import { siteState, makeSite, skylineFromGlobe, discFraction, SUN_RADIUS_DEG, basisLabel } from './core/visibility.js';
 import { RAD, basisAt, bodyToThree, coordLabel } from './core/frames.js';
@@ -283,12 +283,29 @@ function path(fn, periodDays, color, opacity, t0) {
 const scaled = (v, k) => [v[0] * k, v[1] * k, v[2] * k];
 // The clock starts at the Start date and time of the sidebar (UTC); every body stands where it is at
 // that moment. The space is turned once so the Sun is far behind the Moon on the left (26 degrees left
-// of "straight behind"). After that nothing turns by itself; only the bodies move with the clock.
+// of "straight behind"). With no Start set, the clock begins at the next moment the Earth then stands behind
+// the Moon on the right (28 degrees right of "straight behind"), so the opening view shows Sun, Moon and Earth.
+// After that nothing turns by itself; only the bodies move with the clock.
 const rad = THREE.MathUtils.degToRad, az = v => Math.atan2(v[0], v[2]);
 /** UTC ms of a date field and its time field, NaN if incomplete. */
 const readUtc = (dateId, timeId) => Date.parse(document.getElementById(dateId).value + 'T' + (document.getElementById(timeId).value || '00:00') + 'Z');
-const startMs = readUtc('p-from', 'p-from-time') || Date.now();
-pivot.rotation.set(.04, rad(206) - az(inertialSky(startMs).sun), 0);
+// No time span is set at the start: the clock runs on without end. It starts now when the Horizons table covers
+// today (2027 to 2066), otherwise on 7 July 2028, so the page opens on Horizons data.
+const HORIZONS_FROM = Date.UTC(2027, 0, 1), HORIZONS_TO = Date.UTC(2066, 0, 1), DEFAULT_START = Date.UTC(2028, 6, 7);
+const SUN_AT = rad(206), EARTH_AT = rad(152);
+/** The next UTC time (ms) from `from` on, within 32 days, at which the Earth stands EARTH_AT when the Sun stands SUN_AT; `from` if none. */
+function sunLeftEarthRight(from) {
+  const off = t => { const d = inertialSky(t), x = az(d.earth) - az(d.sun) - (EARTH_AT - SUN_AT); return Math.atan2(Math.sin(x), Math.cos(x)); };
+  const STEP = 3600000;
+  for (let a = from, fa = off(a); a < from + 32 * DAY_MS; ) {
+    const b = a + STEP, fb = off(b);
+    if (Math.abs(fa) < 1 && Math.abs(fb) < 1 && fa * fb <= 0) return fa === fb ? a : Math.round(a + STEP * fa / (fa - fb));
+    a = b; fa = fb;
+  }
+  return from;
+}
+const startMs = readUtc('p-from', 'p-from-time') || sunLeftEarthRight(Date.now() >= HORIZONS_FROM && Date.now() < HORIZONS_TO ? Date.now() : DEFAULT_START);
+pivot.rotation.set(.04, SUN_AT - az(inertialSky(startMs).sun), 0);
 const orbits = new THREE.Group();
 orbits.add(path(d => scaled(d.sun, SUN_DIST), 365.25, 0xd9b377, .2, startMs));
 orbits.add(path(d => scaled(d.earth, d.earthDistKm * KM), SIDEREAL_DAYS, 0x7fb0e0, .42, startMs));
@@ -313,7 +330,8 @@ let simMs = startMs;
 // Time control (sidebar). With Start and Stop set, the clock plays exactly that span and repeats it:
 // at Stop it jumps back to Start. With the span cleared it runs on without end from where it is.
 let playing = !reduce.matches, stopMs = Infinity, loopMs = startMs, onClock = null;
-let speed = 1;                                       // speed buttons of the sidebar: a factor on TIME_SCALE
+let speed = 1;                                       // speed buttons: a factor on TIME_SCALE
+let scrubbing = false;                               // the time bar is being dragged: the clock waits
 /** Jump to a UTC time: bodies and paths follow at once. */
 function setTime(ms) { simMs = ms; orbits.children.forEach(l => l.userData.retime(ms)); placeBodies(); onClock?.(); }
 function setPlaying(on) { playing = on; onClock?.(); }
@@ -344,7 +362,7 @@ function openingTime(from, end) {
   }
   return null;
 }
-const lastShadowSun = new THREE.Vector3(), earthTurn = new THREE.Quaternion();
+const lastShadowSun = new THREE.Vector3(), earthTurn = new THREE.Quaternion(), sunInMoon = new THREE.Vector3(), moonInverse = new THREE.Quaternion();
 function placeBodies() {
   const d = inertialSky(simMs), m = d.moonToScene;
   const T = HOLD.map(r => [0, 1, 2].map(k => r[0] * m[k][0] + r[1] * m[k][1] + r[2] * m[k][2]));   // HOLD x transpose(moonToScene)
@@ -354,6 +372,7 @@ function placeBodies() {
   // shadows on the Moon: redone when the Sun has moved by more than 0.05 deg against the lunar surface
   if (tmpVec.angleTo(lastShadowSun) > .05 * RAD) { lastShadowSun.copy(tmpVec); if (scope === 'system') renderer.shadowMap.needsUpdate = true; }
   orient(moon, HOLD);                 // the Moon stands still
+  globe?.setSun(sunInMoon.copy(tmpVec).applyQuaternion(moonInverse.copy(moon.quaternion).invert()).normalize());   // for the skyline shadows
   orient(earthBall, d.earthToScene); earthBall.quaternion.premultiply(held);  // true axis, one turn per day
   earthDistKm = d.earthDistKm;
   if (scope === 'terrain') { earthBall.quaternion.premultiply(earthTurn); return; }   // Sun and Earth are with the terrain view, which places them
@@ -405,14 +424,16 @@ fetch('assets/stars-bsc5.json').then(r => r.json()).then(cat => {
 let closeDistance = 11, systemDistance = 20, restDistance = 11;
 let expanded = false, mix = 0, zoom = null;         // mix: 0 = close to the Moon, 1 = whole system
 // In the system view the camera can come down to the Moon: zoomK 0 = the whole system as after the opening
-// move, 1 = NEAR_DISTANCE from the Moon's centre (280 km above the surface). Mouse wheel, + and - keys, "Explore".
-const NEAR_DISTANCE = R * 1.16;
+// move, 1 = NEAR_DISTANCE from the Moon's centre (280 km above the surface), -1 = FAR_FACTOR times further away than
+// the system view (the Moon small in the middle, room for many info cards). Always Moon-centred.
+// Ctrl + mouse wheel (or a pinch on a touchpad), + and - keys, "Explore".
+const NEAR_DISTANCE = R * 1.16, FAR_FACTOR = 4, ZOOM_MIN = -1;
 let zoomK = 0, zoomAnim = null;
-const distanceFor = m => m < 1 ? closeDistance + (systemDistance - closeDistance) * m : systemDistance * Math.pow(NEAR_DISTANCE / systemDistance, zoomK);
-function setZoom(k) { zoomK = THREE.MathUtils.clamp(k, 0, 1); zoomAnim = null; layout(); }
+const distanceFor = m => m < 1 ? closeDistance + (systemDistance - closeDistance) * m : zoomK < 0 ? systemDistance * Math.pow(FAR_FACTOR, -zoomK) : systemDistance * Math.pow(NEAR_DISTANCE / systemDistance, zoomK);
+function setZoom(k) { zoomK = THREE.MathUtils.clamp(k, ZOOM_MIN, 1); zoomAnim = null; layout(); }
 function animateZoom(to, ms = 1400) {
   if (reduce.matches) return setZoom(to);
-  zoomAnim = { t0: performance.now(), ms, from: zoomK, to: THREE.MathUtils.clamp(to, 0, 1) };
+  zoomAnim = { t0: performance.now(), ms, from: zoomK, to: THREE.MathUtils.clamp(to, ZOOM_MIN, 1) };
 }
 // The canvas always covers the whole window. When the sidebar is open the camera renders the scene into
 // the remaining width through a view offset, so the drawing buffer is never resized during the slide
@@ -468,7 +489,7 @@ function moonPoint(e) {
 }
 let dropPin = null;                                  // set by the sidebar block below: (lat, lon) => marker + Coordinates field
 let drag = null, vy = 0, vx = 0, hoverEvent = null;
-const OVERLAYS = 'a, .params, .pin, .card, .series, .tbar, .legend';
+const OVERLAYS = 'a, .params, .pin, .card, .series, .tbar, .timebar, .legend';
 hero.addEventListener('pointerdown', e => {
   if (busy || scope !== 'system' || e.target.closest(OVERLAYS)) return;         // drag anywhere turns the space
   drag = { x: e.clientX, y: e.clientY, moved: 0 };
@@ -491,13 +512,20 @@ hero.addEventListener('pointermove', e => {
   pivot.rotation.x = THREE.MathUtils.clamp(pivot.rotation.x + vx, -TILT, TILT);
 });
 hero.addEventListener('pointerleave', () => { hoverEvent = null; hideReadout(); });
-// Wheel: towards the Moon and back. Fully zoomed out, the wheel scrolls the page as on any page.
+// Ctrl + wheel: towards the Moon and back, the Moon stays in the middle. The wheel alone scrolls the page (and
+// long cards) as on any page. Ctrl + wheel is the browser's page zoom otherwise; over the scene it is taken for this.
 hero.addEventListener('wheel', e => {
-  if (scope !== 'system' || !expanded || busy || zoom || scrollY > 0 || e.target.closest('.params, .card, .series')) return;
-  if (e.deltaY > 0 && zoomK <= 0) return;
+  if (!e.ctrlKey || scope !== 'system') return;
   e.preventDefault();
+  if (!expanded || busy || zoom) return;
   setZoom(zoomK - e.deltaY * (e.deltaMode === 1 ? .04 : .0012));
 }, { passive: false });
+/** Moon radius on screen (px) at a camera distance, and the zoom that gives a radius. */
+const discRadius = dist => R / (2 * Math.tan(THREE.MathUtils.degToRad(FOV / 2)) * dist) * world.clientHeight;
+function zoomForRadius(r) {
+  const dist = discRadius(1) / r;
+  return dist > systemDistance ? -Math.log(dist / systemDistance) / Math.log(FAR_FACTOR) : Math.log(dist / systemDistance) / Math.log(NEAR_DISTANCE / systemDistance);
+}
 let lastMoved = 0;
 function release() {
   if (!drag) return;
@@ -582,10 +610,16 @@ const limits = () => ({ dark: +limitInputs.dark.value, dte: +limitInputs.dte.val
 // Landing-site pins (landing-pins.js): an HTML layer over the canvas, switched by "historical" in the sidebar.
 const pins = createPins({ root: document.getElementById('pins'), hero, moon, pivot, camera, R });
 // Info cards (landing-cards.js): a click on a marker opens a card with Sun and Earth at that site for the simulated time.
-// Time series (landing-series.js): solar elevation of the marked points over the time span, switched by "series" in the sidebar.
+// Time series (landing-series.js): solar elevation of the marked points over the time span. Shown only through
+// "Solar Elevation" in the header (off at the start); opening a point's details does not bring it up.
 const series = createSeries({ hero, marked: () => pins.marked(), now: () => simMs, window: () => spanWindow,
-  setTime: ms => setTime(ms), onClose: () => document.querySelector('.param[data-param="series"]')?.click(),
+  setTime: ms => setTime(ms), onClose: () => showSeries(false),
   ground: s => siteData.get(s), groundVersion: dataVersion });
+let cardCount = 0, cardDiscR = 0;                 // for the zoom that makes room for the cards (render loop)
+const seriesToggle = document.getElementById('series-toggle');
+function showSeries(on) { series.show(on); seriesToggle.setAttribute('aria-pressed', on); }
+seriesToggle.addEventListener('click', e => { e.preventDefault(); showSeries(seriesToggle.getAttribute('aria-pressed') !== 'true'); if (!expanded) expand(); });
+seriesToggle.addEventListener('keydown', e => { if (e.key === ' ') { e.preventDefault(); seriesToggle.click(); } });
 const cards = createCards({ hero, pins, now: () => simMs, disc: () => moonDisc, avoid: () => series.rect(),
   ground: s => siteData.get(s, true), groundVersion: dataVersion, window: () => spanWindow, limits, onTerrain: s => openTerrain(s) });
 
@@ -593,7 +627,7 @@ const cards = createCards({ hero, pins, now: () => simMs, disc: () => moonDisc, 
 // "Surface" of the sidebar chooses what the ground shows; the layers lie over it. The same choice holds in
 // the terrain view, where the colour-coded global grids (sunlight, Earth) have no counterpart and relief is shown.
 const surfaceSelect = document.getElementById('p-surface'), surfaceNote = document.getElementById('p-surface-note');
-let detailNote = '';                                  // set when the Moon was rebuilt with the lighter mesh
+let detailNote = '';                                  // says so when the lighter mesh was asked for
 let surfaceMode = 'relief', globeGrid = null;
 const layerOn = { graticule: false, contours: true, squares: false };
 const SURFACES = {                                    // the colour-coded surfaces and what their legend says
@@ -602,11 +636,22 @@ const SURFACES = {                                    // the colour-coded surfac
   earth: { title: 'Earth in view', unit: '% of the Earth’s disc in view', stops: CIVIDIS },
 };
 const valueLayers = {};                               // name -> { values, width, height, note } of data/exposure/
+// Shadows on the Moon: the skyline map (tools/build_horizon.mjs). Until it has loaded, or without the file, the
+// shadow map of the Sun's light is used as before.
+let horizonMap = null;
+fetch('data/globe/horizon_720x360x24.json').then(r => r.ok ? r.json() : Promise.reject()).then(async meta => {
+  const buf = await fetch('data/globe/' + meta.file).then(r => r.ok ? r.arrayBuffer() : Promise.reject());
+  if (buf.byteLength !== meta.width * meta.height * meta.azimuths) return;
+  horizonMap = { bytes: new Uint8Array(buf), meta };
+  if (globe) { globe.setHorizon(horizonMap.bytes, meta); sunLight.castShadow = false; placeBodies(); }
+}).catch(() => console.warn('Skyline map not loaded: the Moon keeps the shadow map.'));
 function buildGlobe(detail) {
   if (globe) { globe.group.removeFromParent(); globe.dispose(); }
   globe = createMoonGlobe({ grid: globeGrid, radius: R, albedo, detail });
   for (const [name, L] of Object.entries(valueLayers)) globe.setValues(name, L.values, L.width, L.height, SURFACES[name].stops);
   moon.add(globe.group); material.visible = false;
+  if (horizonMap) globe.setHorizon(horizonMap.bytes, horizonMap.meta);
+  sunLight.castShadow = !globe.hasHorizon; placeBodies();
   const size = detail === 1 ? 4096 : 2048;
   if (sunLight.shadow.mapSize.x !== size) { sunLight.shadow.mapSize.set(size, size); sunLight.shadow.map?.dispose(); sunLight.shadow.map = null; }
   applySurface();
@@ -662,25 +707,9 @@ function updateLegend() {
   legendTicks.replaceChildren(...ticks.map(([f, text]) => { const e = document.createElement('span'); e.style.left = f * 100 + '%'; e.textContent = text; return e; }));
 }
 
-// If frames take too long with the full mesh, the Moon is rebuilt once with a quarter of the triangles and a
-// smaller shadow map. Measured over two seconds of the system view, not while anything is loading.
-let slowTime = 0, slowFrames = 0, longFrames = 0, lightDetail = startLight;
-function watchFrameTime(real) {
-  if (lightDetail || !globe || !expanded || zoom || document.hidden) { slowTime = slowFrames = longFrames = 0; return; }
-  if (real > .5) {                                     // one such frame is a pause or a load; four in a row are the mesh
-    slowTime = slowFrames = 0;
-    if (++longFrames >= 4) lighten(1 / real);
-    return;
-  }
-  longFrames = 0; slowTime += real; slowFrames++;
-  if (slowTime < 2) return;
-  const fps = slowFrames / slowTime; slowTime = slowFrames = 0;
-  if (fps < 20) lighten(fps);
-}
-function lighten(fps) {
-  lightDetail = true; detailNote = 'Moon drawn with a lighter mesh: the full mesh ran at ' + (fps < 1 ? 'under 1 frame' : fps.toFixed(0) + ' frames') + ' per second.';
-  console.info(detailNote); buildGlobe(2);
-}
+// The Moon is always drawn with the full mesh and the 4096 shadow map. The lighter mesh exists only on request
+// (?detail=light in the address); the page never switches to it by itself.
+if (startLight) detailNote = 'Moon drawn with the lighter mesh (?detail=light in the address).';
 
 // --- Values under the pointer ------------------------------------------------------------
 const readoutEl = document.getElementById('readout');
@@ -749,6 +778,20 @@ async function openTerrain(site) {
   }
   loadingEl.hidden = true; opening = false;
 }
+// Paths across the site's sky, for the terrain view: the Sun over one lunar day and the Earth over one sidereal
+// month, both centred on the simulated time. Redone when the clock has moved a day away from that centre.
+const LUNAR_DAY_MS = 29.530589 * DAY_MS;
+let pathsAt = NaN;
+function terrainPaths() {
+  if (Math.abs(simMs - pathsAt) < DAY_MS) return;
+  pathsAt = simMs;
+  const st = { sun: {}, earth: {} }, sunP = [], earthP = [];
+  for (let i = 0; i <= 360; i++) {
+    sunP.push(enu(siteState(simMs + (i / 360 - .5) * LUNAR_DAY_MS, terrainCalc, st).sun));
+    earthP.push(enu(siteState(simMs + (i / 360 - .5) * SIDEREAL_DAYS * DAY_MS, terrainCalc, st).earth));
+  }
+  terrain.setPaths(sunP, earthP);
+}
 function enterTerrain(site, block) {
   scope = 'terrain'; terrainSite = site; terrainCalc = siteData.get(site).site;
   document.body.classList.add('terrain');
@@ -760,7 +803,7 @@ function enterTerrain(site, block) {
   earthTurn.setFromRotationMatrix(tmpMatrix);
   // Sun and Earth go with the view, at the angular sizes they have in the system view
   terrain.adopt(sun, earth, terrain.skyDistance / SUN_DIST, terrain.skyDistance / (earthDistKm * KM));
-  placeBodies();
+  placeBodies(); pathsAt = NaN;
   terrain.controls.enabled = true; tInput.hidden = false; tBar.hidden = false;
   tName.textContent = site.name;
   const g = siteData.get(site);
@@ -784,15 +827,18 @@ function closeTerrain() {
 document.getElementById('t-back').addEventListener('click', closeTerrain);
 // values of the ground point under the pointer
 let tHover = null, tDown = false;
-tInput.addEventListener('pointerdown', () => { tDown = true; hideReadout(); });
+// Pointer over the ground: the ring on the terrain marks the point and the mouse pointer is hidden. Pressed: the
+// ring goes and the grabbing hand shows while the view is turned.
+tInput.addEventListener('pointerdown', () => { tDown = true; tInput.classList.remove('on-ground'); hideReadout(); });
 addEventListener('pointerup', () => { tDown = false; });
-tInput.addEventListener('pointerleave', () => { tHover = null; hideReadout(); });
+tInput.addEventListener('pointerleave', () => { tHover = null; tInput.classList.remove('on-ground'); hideReadout(); });
 tInput.addEventListener('pointermove', e => {
   if (tDown) return;
   if (!tHover) requestAnimationFrame(() => {
     const ev = tHover; tHover = null;
     if (!ev || scope !== 'terrain') return;
     const p = terrain.pick(pointerNdc(ev).x, ndc.y);
+    tInput.classList.toggle('on-ground', !!p && !tDown);
     if (!p) return hideReadout();
     showReadout(ev, ['<b>' + coordLabel(p.lat, p.lon) + '</b>',
       'Elevation ' + thousands(p.elevM) + ' m, slope ' + p.slopeDeg.toFixed(1) + '°',
@@ -819,7 +865,7 @@ function frame(now) {
     pivot.rotation.y += vy; pivot.rotation.x = THREE.MathUtils.clamp(pivot.rotation.x + vx, -TILT, TILT);
     vy *= .94; vx *= .94;
   }
-  if (playing && !zoom?.to) {
+  if (playing && !zoom?.to && !scrubbing) {
     simMs += dt * 1000 * TIME_SCALE * speed;              // the one clock for every motion
     if (simMs >= stopMs) setTime(loopMs); else { placeBodies(); onClock?.(); }
   }
@@ -842,16 +888,23 @@ function frame(now) {
   updateWindow();
   pins.update(bufW, bufH);
   cards.update();
+  // Info cards and zoom: a card more than before and they no longer stand free of each other -> zoom out as far as
+  // needed (never in). While the Moon changes size on screen the cards that were not moved by hand follow it.
+  if (scope === 'system' && expanded && !zoom) {
+    const n = cards.count();
+    if (n <= cardCount) cardCount = n;
+    else if (!zoomAnim) { cardCount = n; const r = cards.fit(discRadius(systemDistance * FAR_FACTOR)); if (r) animateZoom(Math.min(zoomK, zoomForRadius(r)), 900); }
+    if (Math.abs(moonDisc.r - cardDiscR) > .5) { cardDiscR = moonDisc.r; cards.relayout(); }
+  }
   series.update();
   if (scope === 'terrain') {
     // Sun and Earth as the site sees them; light and shadows of the ground follow
     const st = siteState(simMs, terrainCalc, tState);
-    terrain.setSky(enu(st.sun), enu(st.earth));
+    terrain.setSky(enu(st.sun), enu(st.earth)); terrainPaths();
     terrain.render();
   } else {
     if (hoverEvent) systemReadout(hoverEvent);
     renderer.render(scene, camera);
-    watchFrameTime(real);
   }
 }
 requestAnimationFrame(frame);
@@ -863,8 +916,7 @@ requestAnimationFrame(frame);
     earthOrbit: on => { orbits.children[1].visible = on; },
     stars: on => { sky.visible = on; },
     historical: on => pins.show(on),
-    series: on => series.show(on),
-    orbits: on => { orbits.visible = on; },              // both paths: the Sun's yearly path and the Earth's orbit
+    orbits: on => { orbits.visible = on; terrain.showPaths(on); },              // both paths: the Sun's yearly path and the Earth's orbit
     graticule: on => { layerOn.graticule = on; applySurface(); },
     contours: on => { layerOn.contours = on; applySurface(); },
     squares: on => { layerOn.squares = on; if (!on) globe?.markSquare(-1); applySurface(); },
@@ -914,16 +966,39 @@ requestAnimationFrame(frame);
   });
   // Time span: Start and Stop (date and time, UTC) bound the clock and it repeats that span; Play/Pause runs it.
   // Changing Start jumps there. Clear empties the span: the clock then runs on freely.
-  const play = document.getElementById('p-play'), clock = document.getElementById('p-now'), toDate = document.getElementById('p-to'), toTime = document.getElementById('p-to-time');
+  // All of it is in the time bar under the scene (#timebar), with the speeds, the clock and a slider over the span.
+  const plays = [...document.querySelectorAll('.pplay')], clocks = [...document.querySelectorAll('.pnow')], toDate = document.getElementById('p-to'), toTime = document.getElementById('p-to-time');
   let shown = '', shownSource = '';
   const sourceEl = document.getElementById('p-source');
   onClock = () => {
     const t = new Date(simMs).toISOString().slice(0, 16).replace('T', ' ');   // UTC, as the heading of the block says
-    if (t !== shown) clock.textContent = shown = t;
+    if (t !== shown) { shown = t; clocks.forEach(c => { c.textContent = t; }); }
     const src = skySource(simMs);                             // where Sun and Earth come from at this moment
     if (src !== shownSource) { shownSource = src; sourceEl.textContent = 'Sun and Earth: ' + SOURCE_LABEL[src] + (src === 'analytic' ? ' (Horizons covers 2027 to 2066)' : ''); }
-    if ((play.getAttribute('aria-pressed') === 'true') !== playing) { play.setAttribute('aria-pressed', playing); play.setAttribute('aria-label', playing ? 'Pause' : 'Play'); }
+    plays.forEach(play => { if ((play.getAttribute('aria-pressed') === 'true') !== playing) { play.setAttribute('aria-pressed', playing); play.setAttribute('aria-label', playing ? 'Pause' : 'Play'); } });
+    showScrub();
   };
+  // Slider of the time bar: the span the numbers cover (Start to Stop, or the two lunar days around the clock).
+  const scrub = document.getElementById('tb-scrub'), tbFrom = document.getElementById('tb-from'), tbTo = document.getElementById('tb-to');
+  const dayText = ms => new Date(ms).toISOString().slice(0, 10);
+  let scrubA = NaN, scrubB = NaN;
+  function showScrub() {
+    if (!spanWindow) return;
+    const { a, b } = spanWindow;
+    if (a !== scrubA || b !== scrubB) { scrubA = a; scrubB = b; tbFrom.textContent = dayText(a); tbTo.textContent = dayText(b); }
+    const f = Math.min(1, Math.max(0, (simMs - a) / (b - a)));
+    if (!scrubbing) scrub.value = Math.round(f * 10000);
+    scrub.style.setProperty('--p', f * 100 + '%');
+    scrub.setAttribute('aria-valuetext', shown + ' UTC');
+  }
+  scrub.addEventListener('input', () => { scrubbing = true; setTime(scrubA + scrub.value / 10000 * (scrubB - scrubA)); });
+  const endScrub = () => { scrubbing = false; };
+  scrub.addEventListener('change', endScrub); scrub.addEventListener('pointerup', endScrub); scrub.addEventListener('blur', endScrub);
+  // One hour back or on: the step at which shadows are worth comparing. Stays inside a set span.
+  document.querySelectorAll('.tb-step').forEach(b => b.addEventListener('click', () => {
+    const t = simMs + b.dataset.step * 3600000;
+    setTime(stopMs < Infinity ? Math.min(Math.max(t, loopMs), stopMs - 1) : t);
+  }));
   function readSpan(jump) {
     const a = readUtc('p-from', 'p-from-time'), b = readUtc('p-to', 'p-to-time'), ok = !(b <= a);
     toDate.setAttribute('aria-invalid', !ok); toTime.setAttribute('aria-invalid', !ok);     // Stop must be after Start
@@ -937,14 +1012,14 @@ requestAnimationFrame(frame);
   });
   ['p-from', 'p-from-time'].forEach(id => document.getElementById(id).addEventListener('change', () => readSpan(true)));
   [toDate, toTime].forEach(el => el.addEventListener('change', () => readSpan(false)));
-  play.addEventListener('click', () => setPlaying(!playing));
+  plays.forEach(play => play.addEventListener('click', () => setPlaying(!playing)));
   // Speed buttons beside Play/Pause: factors on the standard pace (TIME_SCALE = 5000 x real time, 1.4 h per second).
   // 2 x; 12 x = one week in 10 s; 250 x = one year (the Sun's whole path) in 25 s. One at a time; pressing the
   // active one again goes back to the standard pace. Choosing a speed also starts the clock.
-  const speeds = [...box.querySelectorAll('.pspeed')];
+  const speeds = [...document.querySelectorAll('.pspeed')];
   speeds.forEach(b => b.addEventListener('click', () => {
     const on = b.getAttribute('aria-pressed') !== 'true';
-    speeds.forEach(x => x.setAttribute('aria-pressed', x === b && on));
+    speeds.forEach(x => x.setAttribute('aria-pressed', x.dataset.speed === b.dataset.speed && on));
     speed = on ? +b.dataset.speed : 1;
     if (on && !playing) setPlaying(true);
   }));

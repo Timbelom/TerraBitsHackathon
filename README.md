@@ -37,7 +37,13 @@ Download [LDEM64_PA_pixel_202405.tif](https://pgda.gsfc.nasa.gov/data/LOLA_PA/LD
 (715 MB) into the repo folder. It is not in the repository (`.gitignore`).
 
 `?detail=light` behind the address starts with a lighter Moon mesh (a quarter of the triangles, smaller
-shadow map). The page switches to it by itself when frames take too long.
+shadow map). Without it the page always draws the full mesh.
+
+Shadows on the Moon of the system view come from a skyline map (`data/globe/horizon_720x360x24.bin`, written by
+`node tools/build_horizon.mjs` from the global grid): the terrain horizon for every node of a 0.5 deg grid in 24
+azimuths. The page compares the Sun's elevation with it. The terrain view keeps its shadow map at the full
+resolution of the block. On both, relief shading (`view/relief.js`) darkens steep ground as a display aid; it
+depends on the heights only and no number of the page uses it.
 
 ## What is in the folder
 

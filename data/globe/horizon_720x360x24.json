@@ -1,0 +1,20 @@
+{
+ "file": "horizon_720x360x24.bin",
+ "description": "Terrain skyline of the whole Moon: elevation angle of the horizon for every node of a 0.5 deg grid and 24 azimuths, from the 0.25 deg LOLA grid.",
+ "width": 720,
+ "height": 360,
+ "azimuths": 24,
+ "layout": "azimuth layers (layer k = azimuth k * 15 deg, clockwise from north), in each layer row 0 = southernmost, column 0 = longitude -180 deg; values at cell centres",
+ "dtype": "uint8",
+ "min_deg": -6,
+ "span_deg": 36,
+ "decode": "degrees = min_deg + value / 255 * span_deg",
+ "receiver_height_m": 2,
+ "ray_km": [
+  10,
+  350
+ ],
+ "frame": "MOON_ME (mean Earth / polar axis, DE421), east longitude positive",
+ "source": "ldem_me_1440x720.bin",
+ "built_with": "tools/build_horizon.mjs"
+}
