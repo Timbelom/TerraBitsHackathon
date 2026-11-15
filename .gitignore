@@ -1,0 +1,13 @@
+# Source rasters: too large for the repository (download addresses are in the README)
+*.tif
+*.TIF
+# Terrain cut on request by tools/serve.py
+/cache/
+# Left over from the old viewer (global_viewer.py): its tile cache and its copy of three.js
+/tiles/
+/vendor/three@0.160.0/
+# Tooling
+__pycache__/
+*.pyc
+node_modules/
+/.transfer/
